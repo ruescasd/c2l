@@ -5,7 +5,7 @@ use crate::traits::scalar::GroupScalar;
 use crate::utils::serialization::VSerializable;
 use vser_derive::VSerializable;
 
-#[derive(Debug, VSerializable)]
+#[derive(Debug, VSerializable, PartialEq)]
 pub struct SchnorrProof<C: Context> {
     pub big_a: C::Element,
     pub k: C::Scalar,

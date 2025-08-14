@@ -26,7 +26,7 @@ impl<C: Context, const W: usize> DecryptionFactor<C, W> {
 }
 
 
-#[derive(Debug, VSerializable)]
+#[derive(Debug, VSerializable, PartialEq)]
 pub struct DkgPublicKey<C: Context, const T: usize>(PublicKey<C>);
 impl<C: Context, const T: usize> DkgPublicKey<C, T> {
     pub fn from_keypair(keypair: &KeyPair<C>) -> Self {
@@ -47,7 +47,7 @@ impl<C: Context, const T: usize> DkgPublicKey<C, T> {
     }
 }
 
-#[derive(Debug, VSerializable)]
+#[derive(Debug, VSerializable, PartialEq)]
 pub struct DkgCiphertext<C: Context, const W: usize, const T: usize>(Ciphertext<C, W>);
 impl<C: Context, const W: usize, const T: usize> DkgCiphertext<C, W, T> {
     pub fn u(&self) -> &[C::Element; W] {

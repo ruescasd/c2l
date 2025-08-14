@@ -486,7 +486,7 @@ impl<C: Context, const W: usize> PermutationData<C, W> {
     }
 }
 
-#[derive(Debug, VSer)]
+#[derive(Debug, VSer, PartialEq)]
 pub struct ShuffleProof<C: Context, const W: usize> {
     pub commitments: ShuffleCommitments<C, W>,
     pub responses: Responses<C, W>,
@@ -500,7 +500,7 @@ impl<C: Context, const W: usize> ShuffleProof<C, W> {
     }
 }
 
-#[derive(Debug, VSer)]
+#[derive(Debug, VSer, PartialEq)]
 pub struct ShuffleCommitments<C: Context, const W: usize> {
     big_b_n: Vec<C::Element>,
     big_a_prime: C::Element,
@@ -533,7 +533,7 @@ impl<C: Context, const W: usize> ShuffleCommitments<C, W> {
     }
 }
 
-#[derive(Debug, VSer)]
+#[derive(Debug, VSer, PartialEq)]
 pub struct Responses<C: Context, const W: usize> {
     pub k_a: C::Scalar,
     pub k_b_n: Vec<C::Scalar>,

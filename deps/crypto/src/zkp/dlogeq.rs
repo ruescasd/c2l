@@ -6,7 +6,7 @@ use crate::traits::scalar::GroupScalar;
 use crate::utils::serialization::VSerializable;
 use vser_derive::VSerializable as VSer;
 
-#[derive(Debug, VSer)]
+#[derive(Debug, VSer, PartialEq)]
 pub struct DlogEqProof<C: Context, const N: usize> {
     pub big_a_0: C::Element,
     pub big_a_1: [C::Element; N],
