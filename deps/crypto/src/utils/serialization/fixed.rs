@@ -155,6 +155,8 @@ macro_rules! impl_fser_for_tuples {
         generate_fserializable_tuple_impl!(A, B, C, D, E; 1, 2, 3, 4);
 
         generate_fserializable_tuple_impl!(A, B, C, D, E, F; 1, 2, 3, 4, 5);
+
+        generate_fserializable_tuple_impl!(A, B, C, D, E, F, G; 1, 2, 3, 4, 5, 6);
     };
 }
 
@@ -224,6 +226,8 @@ macro_rules! impl_fdeserializable_for_tuples {
         generate_fdeserializable_tuple_impl!(A, B, C, D, E; 0, 1, 2, 3);
 
         generate_fdeserializable_tuple_impl!(A, B, C, D, E, F; 0, 1, 2, 3, 4);
+
+        generate_fdeserializable_tuple_impl!(A, B, C, D, E, F, G; 0, 1, 2, 3, 4, 5);
     };
 }
 
