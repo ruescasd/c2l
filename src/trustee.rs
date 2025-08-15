@@ -2,7 +2,6 @@ use std::array;
 use std::marker::PhantomData;
 
 use crypto::cryptosystem::elgamal;
-use crypto::cryptosystem::Plaintext;
 use crypto::dkgd::reconstruct;
 use crypto::dkgd::Dealer;
 use crypto::cryptosystem::elgamal::Ciphertext;
@@ -20,7 +19,7 @@ use ed25519_dalek::Keypair;
 use log::info;
 
 use crate::hashing;
-use crate::artifact::{Config, Keyshares, Ballots, Mix, PartialDecryption, Plaintexts};
+use crate::artifact::{Config, Keyshares, Ballots, Mix, PartialDecryption, Plaintexts, Plaintext};
 use crate::statement::*;
 use crate::bb::*;
 use crate::util;
@@ -123,7 +122,6 @@ impl<A: Application> Trustee<A> {
                     let mix = Mix {
                         mixed_ballots: e_primes,
                         proof: proof,
-                        phantom_a: PhantomData,
                     };
                     let mix_h = hashing::hash(&mix);
                     
@@ -183,7 +181,6 @@ impl<A: Application> Trustee<A> {
                     let rate = mix.mixed_ballots.len() as f32 / now_.elapsed().as_millis() as f32;
                     let pd = PartialDecryption {
                         pd_ballots: dfs,
-                        phantom_a: PhantomData,
                     };
 
                     let pd_h = hashing::hash(&pd);
@@ -256,7 +253,7 @@ impl<A: Application> Trustee<A> {
         let dealer = Dealer::generate();
         
         let shares = dealer.get_verifiable_shares();
-        Keyshares { shares, phantom_a: PhantomData }
+        Keyshares { shares }
     }
 
     fn get_plaintexts<B: BulletinBoard<A>>(&self, board: &B, cnt: u32, hs: Vec<hashing::Hash>,
@@ -295,7 +292,7 @@ impl<A: Application> Trustee<A> {
 
         let plaintexts = plaintexts.into_iter().map(|p| Plaintext(p)).collect();
         
-        let ret = Plaintexts { plaintexts, phantom_a: PhantomData };
+        let ret = Plaintexts { plaintexts };
 
         Some(ret)
     }

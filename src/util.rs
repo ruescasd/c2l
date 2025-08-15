@@ -2,7 +2,8 @@ use std::path::Path;
 use std::fs;
 use std::io;
 
-use crypto::cryptosystem::Plaintext;
+use crate::artifact::Plaintext;
+use crate::Application;
 use crypto::cryptosystem::naoryung::{Ciphertext, PublicKey};
 use rayon::prelude::*;
 use tempfile::NamedTempFile;
@@ -48,15 +49,17 @@ use crypto::context::Context;
 use crypto::traits::GroupElement;
 
 
-pub fn random_encrypt_ballots<C: Context, const W: usize, const T: usize>(n: usize, pk: &PublicKey<C>) -> (Vec<Plaintext<C, W>>, Vec<Ciphertext<C, W>>) {
+pub fn random_encrypt_ballots<A: Application>(n: usize, pk: &PublicKey<A::Context>) -> (Vec<Plaintext<A>>, Vec<Ciphertext<A::Context, {A::W}>>) 
+where [(); A::W]:
+{
     
-    let plaintexts: Vec<Plaintext<C, W>> = (0..n).into_par_iter().map(|_| {
-        let mut rng = C::get_rng();    
-        Plaintext(<[C::Element; W]>::random(&mut rng))
+    let plaintexts: Vec<Plaintext<A>> = (0..n).into_par_iter().map(|_| {
+        let mut rng = A::Context::get_rng();    
+        Plaintext(<[<A::Context as Context>::Element; A::W]>::random(&mut rng))
 
     }).collect();
 
-    let cs: Vec<Ciphertext<C, W>> = plaintexts.par_iter().map(|p| {
+    let cs: Vec<Ciphertext<A::Context, {A::W}>> = plaintexts.par_iter().map(|p| {
             // let encoded = pk.group.encode(&p);
             let encrypted = pk.encrypt(&p.0);
             // (value, encrypted)

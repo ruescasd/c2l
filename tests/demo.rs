@@ -6,15 +6,14 @@ use std::fs::File;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use crypto::cryptosystem::Plaintext;
 use rand::rngs::OsRng;
 use ed25519_dalek::{Keypair, PublicKey as SPublicKey};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use serde::de::DeserializeOwned;
 
 use c2l::statement::SignedStatement;
-use c2l::artifact::*;
+use c2l::{artifact::*, Application};
 
 use c2l::hashing;
 use c2l::bb::BulletinBoard;
@@ -42,19 +41,20 @@ use regex::Regex;
 use simplelog::*;
 use log::info;
 
-type DemoArc<C, const W: usize, const T: usize, const P: usize> = Arc<Mutex<Demo<C, W, T, P>>>;
+type DemoArc<A: Application> = Arc<Mutex<Demo<A>>>;
 
-struct Demo<C: Context, const W: usize, const T: usize, const P: usize> {
+struct Demo<A: Application> 
+{
     pub cb_sink: cursive::CbSink,
-    trustees: Vec<Protocol<C, W, T, P, MemoryBulletinBoard<C, W, T, P>>>,
+    trustees: Vec<Protocol<A, MemoryBulletinBoard<A>>>,
     bb_keypair: Keypair,
-    config: c2l::artifact::CConfig<C>,
-    board: MemoryBulletinBoard<C, W, T, P>,
-    all_plaintexts: Vec<Vec<Plaintext<C, W>>>,
+    config: c2l::artifact::Config<A>,
+    board: MemoryBulletinBoard<A>,
+    all_plaintexts: Vec<Vec<Plaintext<A>>>,
     ballots: u32
 }
-impl<C: Context + Serialize + DeserializeOwned + Eq, const W: usize, const T: usize, const P: usize> Demo<C, W, T, P> {
-    fn new(sink: cursive::CbSink, contests: u32, ballots: u32) -> Demo<C, W, T, P> {
+impl<A: Application> Demo<A> {
+    fn new(sink: cursive::CbSink, contests: u32, ballots: u32) -> Demo<A> {
         let local1 = "/tmp/local";
         let local2 = "/tmp/local2";
         let local_path = Path::new(&local1);
@@ -67,21 +67,21 @@ impl<C: Context + Serialize + DeserializeOwned + Eq, const W: usize, const T: us
         let mut trustee_pks = Vec::new();
         let mut prots = Vec::new();
         
-        for i in 0..P {
+        for i in 0..A::P {
             let local = format!("./local{}", i);
             let local_path = Path::new(&local);
             fs::remove_dir_all(local_path).ok();
             fs::create_dir(local_path).ok();
-            let trustee: Trustee<C, W, T, P> = Trustee::new(local.to_string());
+            let trustee: Trustee<A> = Trustee::new(local.to_string());
             trustee_pks.push(trustee.keypair.public);
-            let prot: Protocol<C, W, T, P, MemoryBulletinBoard<C, W, T, P>> = Protocol::new(trustee);
+            let prot: Protocol<A, MemoryBulletinBoard<A>> = Protocol::new(trustee);
             prots.push(prot);
 
         }
         let mut csprng = OsRng;
         let bb_keypair = Keypair::generate(&mut csprng);
-        let mut bb = MemoryBulletinBoard::<C, W, T, P>::new();
-        let cfg = gen_config::<C, W, T, P>(contests, trustee_pks, bb_keypair.public);
+        let mut bb = MemoryBulletinBoard::<A>::new();
+        let cfg = gen_config::<A>(contests, trustee_pks, bb_keypair.public);
         let cfg_b = bincode::serialize(&cfg).unwrap();
         let tmp_file = util::write_tmp(cfg_b).unwrap();
         bb.add_config(&ConfigPath(tmp_file.path().to_path_buf()));
@@ -99,16 +99,16 @@ impl<C: Context + Serialize + DeserializeOwned + Eq, const W: usize, const T: us
     
     fn add_ballots(&mut self) {
         for i in 0..self.config.contests {
-            let pk_b = self.board.get_unsafe(MemoryBulletinBoard::<C, T, W, P>::public_key(i, 0));
-            let ballots_b = self.board.get_unsafe(MemoryBulletinBoard::<C, W, T, P>::ballots(i));
+            let pk_b = self.board.get_unsafe(MemoryBulletinBoard::<A>::public_key(i, 0));
+            let ballots_b = self.board.get_unsafe(MemoryBulletinBoard::<A>::ballots(i));
             if pk_b.is_some() && ballots_b.is_none() {
                 info!(">> Adding {} ballots..", self.ballots);
                 let pk: PublicKey<C> = bincode::deserialize(pk_b.unwrap()).unwrap();
                 
-                let (plaintexts, ciphertexts) = util::random_encrypt_ballots::<C, W, T>(self.ballots as usize, &pk);
+                let (plaintexts, ciphertexts) = util::random_encrypt_ballots::<A>(self.ballots as usize, &pk);
                 self.all_plaintexts.push(plaintexts);
                 
-                let ballots = CBallots { ciphertexts };
+                let ballots = Ballots { ciphertexts };
                 let ballots_b = bincode::serialize(&ballots).unwrap();
                 let ballots_h = hashing::hash(&ballots);
                 let cfg_h = hashing::hash(&self.config);
@@ -131,8 +131,8 @@ impl<C: Context + Serialize + DeserializeOwned + Eq, const W: usize, const T: us
     
     fn check_plaintexts(&self) {
         for i in 0..self.config.contests {
-            if let Some(decrypted_b) = self.board.get_unsafe(MemoryBulletinBoard::<C, W, T, P>::plaintexts(i, 0)) {
-                let decrypted: CPlaintexts<C, W> = bincode::deserialize(decrypted_b).unwrap();
+            if let Some(decrypted_b) = self.board.get_unsafe(MemoryBulletinBoard::<A>::plaintexts(i, 0)) {
+                let decrypted: Plaintexts<A> = bincode::deserialize(decrypted_b).unwrap();
                 let decrypted: Vec<Vec<u8>> = decrypted.plaintexts.iter().map(|p| {
                     p.ser()
                 }).collect();
@@ -204,6 +204,15 @@ impl<C: Context + Serialize + DeserializeOwned + Eq, const W: usize, const T: us
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct App;
+
+impl Application for App {
+    type Context = RistrettoCtx;
+    const W: usize = 3;
+    const T: usize = 2;
+    const P: usize = 3;
+}
 
 #[test]
 fn demo_tui() {
@@ -212,7 +221,7 @@ fn demo_tui() {
     const P: usize = 3;
     let contests = 3;
     let ballots = 1000;
-    let demo: Demo<RistrettoCtx, 3, 2, P> = Demo::new(siv.cb_sink().clone(), contests, ballots);
+    let demo: Demo<App> = Demo::new(siv.cb_sink().clone(), contests, ballots);
     let params = util::type_name_of(&demo);
     CombinedLogger::init(
         vec![
@@ -233,7 +242,7 @@ fn demo_tui() {
     siv.set_theme(theme);
     
     let build = if cfg!(debug_assertions) {
-        "debug"
+        "Slow as BOLLS"
     } else {
         "release"
     };
@@ -338,25 +347,25 @@ fn demo_tui() {
     siv.run();
 }
 
-fn step_t<C: Context + Serialize + DeserializeOwned + Eq + Send + Sync, const W: usize, const T: usize, const P: usize>(demo_arc: DemoArc<C, W, T, P>, t: u32) {
+fn step_t<A: Application>(demo_arc: DemoArc<A>, t: u32) {
     std::thread::spawn(move || {
         step(Arc::clone(&demo_arc), t)
     });
 }
 
-fn ballots_t<C: Context + Serialize + DeserializeOwned + Eq + Send + Sync, const W: usize, const T: usize, const P: usize>(demo_arc: DemoArc<C, W, T, P>, t: u32) {
+fn ballots_t<A: Application>(demo_arc: DemoArc<A>, t: u32) {
     std::thread::spawn(move || {
         ballots(Arc::clone(&demo_arc), t)
     });
 }
 
-fn check_t<C: Context + Serialize + DeserializeOwned + Eq + Send + Sync, const W: usize, const T: usize, const P: usize>(demo_arc: DemoArc<C, W, T, P>, t: u32) {
+fn check_t<A: Application>(demo_arc: DemoArc<A>, t: u32) {
     std::thread::spawn(move || {
         check(Arc::clone(&demo_arc), t)
     });
 }
 
-fn step<C: Context + Serialize + Eq + DeserializeOwned, const W: usize, const T: usize, const P: usize>(demo_arc: DemoArc<C, W, T, P>, t: u32) {
+fn step<A: Application>(demo_arc: DemoArc<A>, t: u32) {
     let mut demo = demo_arc.lock().unwrap();
     demo.status(String::from("Working..."));
     info!("set_panel=[facts]");
@@ -366,7 +375,7 @@ fn step<C: Context + Serialize + Eq + DeserializeOwned, const W: usize, const T:
     demo.done(t);
 }
 
-fn ballots<C: Context + Serialize + Eq + DeserializeOwned, const W: usize, const T: usize, const P: usize>(demo_arc: DemoArc<C, W, T, P>, t: u32) {
+fn ballots<A: Application>(demo_arc: DemoArc<A>, t: u32) {
     let mut demo = demo_arc.lock().unwrap();
     demo.status(String::from("Working..."));
     info!("set_panel=[{}]", t);
@@ -374,7 +383,7 @@ fn ballots<C: Context + Serialize + Eq + DeserializeOwned, const W: usize, const
     demo.done(t);
 }
 
-fn check<C: Context + Serialize + Eq + DeserializeOwned, const W: usize, const T: usize, const P: usize>(demo_arc: DemoArc<C, W, T, P>, t: u32) {
+fn check<A: Application>(demo_arc: DemoArc<A>, t: u32) {
     let demo = demo_arc.lock().unwrap();
     demo.status(String::from("Working..."));
     info!("set_panel=[{}]", t);
@@ -572,17 +581,17 @@ impl DemoLogSink {
     }
 }
 
-fn gen_config<C: Context, const W: usize, const T: usize, const P: usize>(contests: u32, trustee_pks: Vec<SPublicKey>,
-    ballotbox_pk: SPublicKey) -> c2l::artifact::CConfig<C> {
+fn gen_config<A: Application>(contests: u32, trustee_pks: Vec<SPublicKey>,
+    ballotbox_pk: SPublicKey) -> c2l::artifact::Config<A> {
 
     let id = Uuid::new_v4();
 
-    let cfg = c2l::artifact::CConfig {
+    let cfg = c2l::artifact::Config {
         id: id.as_bytes().clone(),
         contests: contests, 
         ballotbox: ballotbox_pk, 
         trustees: trustee_pks,
-        phantom_c: PhantomData
+        phantom_a: PhantomData
     };
 
     cfg

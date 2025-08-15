@@ -55,6 +55,7 @@ fn concat_bytes<T: HashBytes>(cs: &Vec<T>) -> Vec<u8> {
 }
 
 use crate::util;
+use crate::Application;
 
 pub fn hash<T: HashBytes>(data: &T) -> [u8; 64] {
     let bytes = data.get_bytes();
@@ -119,11 +120,11 @@ impl HashBytes for SignedStatement {
     }
 }
 
-use crate::artifact::CConfig;
+use crate::artifact::Config;
 use crypto::context::Context;
 
 
-impl<C: Context> HashBytes for CConfig<C> {
+impl<A: Application> HashBytes for Config<A> {
     fn get_bytes(&self) -> Vec<u8> {
         let mut bytes = self.id.to_vec();
         bytes.extend(&self.contests.to_le_bytes());
@@ -134,9 +135,13 @@ impl<C: Context> HashBytes for CConfig<C> {
     }
 }
 
-use crate::artifact::CKeyshares;
+use crate::artifact::Keyshares;
 
-impl<C: Context, const T: usize, const P: usize> HashBytes for CKeyshares<C, T, P> {
+impl<A: Application> HashBytes for Keyshares<A> 
+where 
+[(); {A::T}]:,
+[(); {A::P}]:,
+{
     fn get_bytes(&self) -> Vec<u8> {
         let bytes = bincode::serialize(&self.shares).unwrap();
 
@@ -144,7 +149,7 @@ impl<C: Context, const T: usize, const P: usize> HashBytes for CKeyshares<C, T, 
     }
 }
 
-use crate::artifact::CBallots;
+use crate::artifact::Ballots;
 
 impl<C: Context, const W: usize, const T: usize> HashBytes for DkgCiphertext<C, W, T> {
     fn get_bytes(&self) -> Vec<u8> {
@@ -176,23 +181,30 @@ impl<C: Context> HashBytes for PublicKey<C> {
     }
 }
 
-use crypto::cryptosystem::Plaintext;
-
-impl<C: Context, const W: usize> HashBytes for Plaintext<C, W> {
+use crate::artifact::Plaintext;
+impl<A: Application> HashBytes for Plaintext<A> 
+where [(); A::W]:
+{
     fn get_bytes(&self) -> Vec<u8> {
         bincode::serialize(&self).unwrap()
     }
 }
 
-impl<C: Context, const W: usize> HashBytes for CBallots<C, W> {
+impl<A: Application> HashBytes for Ballots<A> 
+where 
+[(); {A::W}]:,
+{
     fn get_bytes(&self) -> Vec<u8> {
         concat_bytes(&self.ciphertexts)
     }
 }
 
-use crate::artifact::CMix;
+use crate::artifact::Mix;
 
-impl<C: Context, const W: usize, const T: usize> HashBytes for CMix<C, W, T> {
+impl<A: Application> HashBytes for Mix<A> 
+where 
+[(); {A::W}]:,
+{
     fn get_bytes(&self) -> Vec<u8> {
         let mut bytes = concat_bytes(&self.mixed_ballots);
         bytes.extend(bincode::serialize(&self.proof).unwrap());
@@ -201,9 +213,12 @@ impl<C: Context, const W: usize, const T: usize> HashBytes for CMix<C, W, T> {
     }
 }
 
-use crate::artifact::CPartialDecryption;
+use crate::artifact::PartialDecryption;
 
-impl<C: Context, const W: usize>  HashBytes for CPartialDecryption<C, W> {
+impl<A: Application> HashBytes for PartialDecryption<A> 
+where 
+[(); {A::W}]:,
+{
     fn get_bytes(&self) -> Vec<u8> {
         let bytes = concat_bytes(&self.pd_ballots);
 
@@ -211,9 +226,12 @@ impl<C: Context, const W: usize>  HashBytes for CPartialDecryption<C, W> {
     }
 }
 
-use crate::artifact::CPlaintexts;
+use crate::artifact::Plaintexts;
 
-impl<C: Context, const W: usize> HashBytes for CPlaintexts<C, W> {
+impl<A: Application> HashBytes for Plaintexts<A> 
+where 
+[(); {A::W}]:,
+{
     fn get_bytes(&self) -> Vec<u8> {
         concat_bytes(&self.plaintexts)
     }

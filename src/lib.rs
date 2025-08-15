@@ -1,5 +1,7 @@
 #![allow(dead_code)]
+#![feature(generic_const_items)]
 #![feature(generic_const_exprs)]
+#![allow(incomplete_features)]
 
 
 pub mod util;
@@ -14,12 +16,13 @@ pub mod action;
 pub mod memory_bb;
 pub mod trustee;
 
-use serde::Serialize;
+use serde::{de::DeserializeOwned, Serialize};
 pub use crypto::context::Context;
 
-pub trait Application {
-    type Context: Context + Serialize;
+pub trait Application: Clone + Serialize + DeserializeOwned + PartialEq + Send + Sync + 'static {
+    type Context: Context + Serialize + DeserializeOwned;
     const W: usize;
     const T: usize;
     const P: usize;
 }
+
