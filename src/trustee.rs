@@ -13,7 +13,6 @@ use crypto::dkgd::Recipient;
 use crypto::traits::CryptoGroup;
 use crypto::dkgd::VerifiableShare;
 use crypto::zkp::shuffle::Shuffler;
-use generic_array::{typenum::U32, GenericArray};
 
 use rand::rngs::OsRng;
 use ed25519_dalek::Keypair;
@@ -28,7 +27,6 @@ use crate::util;
 use crate::action::Act;
 use crate::util::short;
 use crate::localstore::LocalStore;
-use crate::symmetric;
 use crate::protocol::*;
 use serde::Serialize;
 
@@ -37,7 +35,7 @@ use crypto::context::Context;
 pub struct Trustee<C: Context, const W: usize, const T: usize, const P: usize> {
     pub keypair: Keypair,
     pub localstore: LocalStore<C, W, T, P>,
-    pub symmetric: GenericArray<u8, U32>
+    // pub symmetric: GenericArray<u8, U32>
 }
 
 impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Trustee<C, W, T, P> {
@@ -46,12 +44,12 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Tru
         let mut csprng = OsRng;
         let localstore = LocalStore::new(local_store);
         let keypair = Keypair::generate(&mut csprng);
-        let symmetric = symmetric::gen_key();
+        // let symmetric = symmetric::gen_key();
 
         Trustee {
             keypair,
             localstore,
-            symmetric
+            // symmetric
         }
     }
     
