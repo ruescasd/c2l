@@ -2,10 +2,13 @@ use std::path::Path;
 use std::fs;
 use std::io;
 
-use crypto::cryptosystem::Plaintext;
 use crypto::cryptosystem::naoryung::{Ciphertext, PublicKey};
 use rayon::prelude::*;
 use tempfile::NamedTempFile;
+
+use crypto::context::Context;
+use crypto::traits::GroupElement;
+use crate::artifact::Plaintext;
 
 pub fn read_file_bytes(path: &Path) -> io::Result<Vec<u8>> {
     fs::read(path)
@@ -44,10 +47,6 @@ pub fn to_u8_64(input: &Vec<u8>) -> [u8; 64] {
     bytes
 }
 
-use crypto::context::Context;
-use crypto::traits::GroupElement;
-
-
 pub fn random_encrypt_ballots<C: Context, const W: usize, const T: usize>(n: usize, pk: &PublicKey<C>) -> (Vec<Plaintext<C, W>>, Vec<Ciphertext<C, W>>) {
     
     let plaintexts: Vec<Plaintext<C, W>> = (0..n).into_par_iter().map(|_| {
@@ -59,7 +58,6 @@ pub fn random_encrypt_ballots<C: Context, const W: usize, const T: usize>(n: usi
     let cs: Vec<Ciphertext<C, W>> = plaintexts.par_iter().map(|p| {
             // let encoded = pk.group.encode(&p);
             let encrypted = pk.encrypt(&p.0);
-            // (value, encrypted)
             encrypted
         
     }).collect();

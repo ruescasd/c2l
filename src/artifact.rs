@@ -4,11 +4,12 @@ use ed25519_dalek::PublicKey as SPublicKey;
 use serde::{Deserialize, Serialize};
 
 use crypto::cryptosystem::naoryung::{Ciphertext as NYCiphertext};
-use crypto::cryptosystem::Plaintext;
 use crypto::zkp::shuffle::ShuffleProof as CShuffleProof;
 use crypto::context::Context;
 use crypto::cryptosystem::elgamal::Ciphertext;
 
+use serde::{self, de::Error, Deserializer, Serializer};
+use crypto::utils::serialization::{VDeserializable, VSerializable};
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
 pub struct CConfig<C: Context> {
@@ -43,4 +44,27 @@ pub struct CPartialDecryption<C: Context, const W: usize> {
 #[derive(Serialize, Deserialize)]
 pub struct CPlaintexts<C: Context, const W: usize> {
     pub plaintexts: Vec<Plaintext<C, W>>
+}
+#[derive(Debug, PartialEq, Eq)]
+pub struct Plaintext<C: Context, const W: usize>(pub [C::Element; W]);
+
+impl<'de, C: Context, const W: usize> serde::Deserialize<'de> for Plaintext<C, W> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes: Vec<u8> = serde::Deserialize::deserialize(deserializer)?;
+        let p = <[<C as Context>::Element; W]>::deser(&bytes).map_err(D::Error::custom)?;
+
+        Ok(Self(p))
+    }
+}
+
+impl<C: Context, const W: usize> serde::Serialize for Plaintext<C, W> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_bytes(&self.0.ser())
+    }
 }

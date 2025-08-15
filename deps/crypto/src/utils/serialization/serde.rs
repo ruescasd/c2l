@@ -1,5 +1,5 @@
 use crate::context::{Context, RistrettoCtx};
-use crate::cryptosystem::{elgamal, naoryung, Plaintext};
+use crate::cryptosystem::{elgamal, naoryung};
 use crate::dkgd::{DkgCiphertext, DkgPublicKey};
 use crate::dkgd::{VerifiableShares, VerifiableShare, DecryptionFactor};
 use crate::utils::serialization::{VDeserializable, VSerializable};
@@ -301,26 +301,6 @@ impl<'de, C: Context, const T: usize> serde::Deserialize<'de> for DecryptionFact
 }
 
 impl<C: Context, const T: usize> serde::Serialize for DecryptionFactor<C, T> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_bytes(&self.ser())
-    }
-}
-
-// Plaintext
-impl<'de, C: Context, const T: usize> serde::Deserialize<'de> for Plaintext<C, T> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let bytes: Vec<u8> = serde::Deserialize::deserialize(deserializer)?;
-        Self::deser(&bytes).map_err(D::Error::custom)
-    }
-}
-
-impl<C: Context, const T: usize> serde::Serialize for Plaintext<C, T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,

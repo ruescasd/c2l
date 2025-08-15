@@ -2,7 +2,7 @@
 use std::array;
 
 use crypto::cryptosystem::elgamal;
-use crypto::cryptosystem::Plaintext;
+use crate::artifact::Plaintext;
 use crypto::dkgd::reconstruct;
 use crypto::dkgd::Dealer;
 use crypto::cryptosystem::elgamal::Ciphertext;
@@ -35,7 +35,6 @@ use crypto::context::Context;
 pub struct Trustee<C: Context, const W: usize, const T: usize, const P: usize> {
     pub keypair: Keypair,
     pub localstore: LocalStore<C, W, T, P>,
-    // pub symmetric: GenericArray<u8, U32>
 }
 
 impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Trustee<C, W, T, P> {
@@ -44,12 +43,10 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Tru
         let mut csprng = OsRng;
         let localstore = LocalStore::new(local_store);
         let keypair = Keypair::generate(&mut csprng);
-        // let symmetric = symmetric::gen_key();
 
         Trustee {
             keypair,
             localstore,
-            // symmetric
         }
     }
     
@@ -245,6 +242,7 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Tru
         if mixing_trustee == 0 {
             let ballots = board.get_ballots(contest, ballots_h).unwrap();
             
+            // stripping naoryung to elgamal
             let ciphertexts: Vec<Ciphertext<C, W>> = ballots.ciphertexts.iter().map(|c| {
                 let ok = c.proof.verify(&pk.pk_b, &pk.pk_a, &c.u_b, &c.v_b, &c.u_a);
                 assert!(ok);
@@ -311,17 +309,6 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Tru
     fn get_pk<B: BulletinBoard<C, W, T, P>>(&self, board: &B, hs: Vec<Hash>, cnt: u32, self_index: u32) -> Option<PublicKey<C>> {
         
         let shares = board.get_shares(cnt, hs).unwrap();
-        /* let recipients: [Recipient<C, T, P>; P] = array::from_fn(|i| {
-            
-            let position = (i + 1) as u32;
-            let position = ParticipantPosition::new(position);
-            
-            let verifiable_shares: [VerifiableShare<C, T>; P] = shares.clone().map(|v| {
-                v.shares.for_participant(&position)
-            });
-            
-            Recipient::new(position, verifiable_shares)
-        });*/
 
         let position = self_index + 1;
         let position = ParticipantPosition::new(position);

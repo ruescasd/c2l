@@ -5,6 +5,21 @@ use crypto::dkgd::DkgCiphertext;
 use crypto::cryptosystem::naoryung::{Ciphertext as NYCiphertext, PublicKey};
 use crypto::cryptosystem::elgamal::{Ciphertext as EGCiphertext};
 use sha2::{Sha512, Sha256, Digest};
+use ed25519_dalek::PublicKey as SPublicKey;
+use ed25519_dalek::Signature;
+use crypto::context::Context;
+
+use crate::action::Act;
+use crate::artifact::CConfig;
+use crate::statement::SignedStatement;
+use crate::artifact::CPlaintexts;
+use crate::artifact::CPartialDecryption;
+use crate::artifact::CKeyshares;
+use crate::artifact::CBallots;
+use crate::artifact::CMix;
+use crate::artifact::Plaintext;
+use crate::statement::Statement;
+use crate::util;
 
 
 pub type Hash = [u8; 64];
@@ -38,7 +53,6 @@ fn first_bytes<T: HashBytes>(input: T) -> Vec<u8> {
     first
 }
 
-// https://stackoverflow.com/questions/39675949/is-there-a-trait-supplying-iter
 fn concat_bytes_iter<'a, H: 'a + HashBytes, I: IntoIterator<Item = &'a H>>(cs: I) -> Vec<u8> {
     cs.into_iter()
     .map(|x| x.get_bytes())
@@ -54,14 +68,9 @@ fn concat_bytes<T: HashBytes>(cs: &Vec<T>) -> Vec<u8> {
     concat_bytes_iter(cs)
 }
 
-use crate::util;
-
 pub fn hash<T: HashBytes>(data: &T) -> [u8; 64] {
     let bytes = data.get_bytes();
     hash_bytes(bytes)
-    /* let mut hasher = Sha512::new();
-    hasher.update(bytes);
-    util::to_u8_64(&hasher.finalize().to_vec())*/
 }
 
 pub fn hash_bytes(bytes: Vec<u8>) -> [u8; 64] {
@@ -76,23 +85,17 @@ pub fn hash_bytes_256(bytes: Vec<u8>) -> [u8; 32] {
     util::to_u8_32(&hasher.finalize().to_vec())
 }
 
-use ed25519_dalek::PublicKey as SPublicKey;
-
 impl HashBytes for SPublicKey {
     fn get_bytes(&self) -> Vec<u8> {
         self.as_bytes().to_vec()
     }
 }
 
-use ed25519_dalek::Signature;
-
 impl HashBytes for Signature {
     fn get_bytes(&self) -> Vec<u8> {
         self.to_bytes().to_vec()
     }
 }
-
-use crate::statement::Statement;
 
 impl HashBytes for Statement {
     fn get_bytes(&self) -> Vec<u8> {
@@ -108,8 +111,6 @@ impl HashBytes for Statement {
     }
 }
 
-use crate::statement::SignedStatement;
-
 impl HashBytes for SignedStatement {
     fn get_bytes(&self) -> Vec<u8> {
         let mut bytes: Vec<u8> = self.statement.get_bytes();
@@ -118,10 +119,6 @@ impl HashBytes for SignedStatement {
         bytes
     }
 }
-
-use crate::artifact::CConfig;
-use crypto::context::Context;
-
 
 impl<C: Context> HashBytes for CConfig<C> {
     fn get_bytes(&self) -> Vec<u8> {
@@ -134,8 +131,6 @@ impl<C: Context> HashBytes for CConfig<C> {
     }
 }
 
-use crate::artifact::CKeyshares;
-
 impl<C: Context, const T: usize, const P: usize> HashBytes for CKeyshares<C, T, P> {
     fn get_bytes(&self) -> Vec<u8> {
         let bytes = bincode::serialize(&self.shares).unwrap();
@@ -143,8 +138,6 @@ impl<C: Context, const T: usize, const P: usize> HashBytes for CKeyshares<C, T, 
         bytes
     }
 }
-
-use crate::artifact::CBallots;
 
 impl<C: Context, const W: usize, const T: usize> HashBytes for DkgCiphertext<C, W, T> {
     fn get_bytes(&self) -> Vec<u8> {
@@ -176,8 +169,6 @@ impl<C: Context> HashBytes for PublicKey<C> {
     }
 }
 
-use crypto::cryptosystem::Plaintext;
-
 impl<C: Context, const W: usize> HashBytes for Plaintext<C, W> {
     fn get_bytes(&self) -> Vec<u8> {
         bincode::serialize(&self).unwrap()
@@ -190,8 +181,6 @@ impl<C: Context, const W: usize> HashBytes for CBallots<C, W> {
     }
 }
 
-use crate::artifact::CMix;
-
 impl<C: Context, const W: usize, const T: usize> HashBytes for CMix<C, W, T> {
     fn get_bytes(&self) -> Vec<u8> {
         let mut bytes = concat_bytes(&self.mixed_ballots);
@@ -201,8 +190,6 @@ impl<C: Context, const W: usize, const T: usize> HashBytes for CMix<C, W, T> {
     }
 }
 
-use crate::artifact::CPartialDecryption;
-
 impl<C: Context, const W: usize>  HashBytes for CPartialDecryption<C, W> {
     fn get_bytes(&self) -> Vec<u8> {
         let bytes = concat_bytes(&self.pd_ballots);
@@ -211,15 +198,11 @@ impl<C: Context, const W: usize>  HashBytes for CPartialDecryption<C, W> {
     }
 }
 
-use crate::artifact::CPlaintexts;
-
 impl<C: Context, const W: usize> HashBytes for CPlaintexts<C, W> {
     fn get_bytes(&self) -> Vec<u8> {
         concat_bytes(&self.plaintexts)
     }
 }
-
-use crate::action::Act;
 
 impl HashBytes for Hash {
     fn get_bytes(&self) -> Vec<u8> {
@@ -304,25 +287,4 @@ impl HashBytes for Act {
             }
         }
     }
-}
-
-#[cfg(test)]
-mod tests {  
-    use sha2::{Sha512, Digest};
-    
-    #[test]
-    fn test_sha512() {
-        
-        // create a Sha256 object
-        let mut hasher = Sha512::new();
-
-        // write input message
-        hasher.update(b"hello world");
-
-        // read hash digest and consume hasher
-        let mut result = [0u8;64];
-        let bytes = hasher.finalize();
-        result.copy_from_slice(bytes.as_slice());
-    }
-
 }

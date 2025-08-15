@@ -63,7 +63,6 @@ impl SignedStatement {
             signature
         }
     }
-    
     pub fn pdecryptions(cfg_h: &hashing::Hash, contest: u32, pd_h: &hashing::Hash, pk: &Keypair) -> SignedStatement {
         let statement = Statement::partial_decryption(cfg_h.to_vec(), contest, pd_h.to_vec());
         let stmt_h = hashing::hash(&statement);

@@ -3,9 +3,8 @@ use serde::de::DeserializeOwned;
 use std::array;
 use std::collections::HashMap;
 use std::path::Path;
-
 use std::marker::PhantomData;
-
+use crypto::context::Context;
 
 use crate::hashing::{HashBytes, Hash};
 use crate::hashing;
@@ -15,8 +14,6 @@ use crate::statement::*;
 use crate::protocol::SVerifier;
 use crate::util;
 use crate::localstore::*;
-
-use crypto::context::Context;
 
 struct MBasicBulletinBoard{
     data: HashMap<String, Vec<u8>>

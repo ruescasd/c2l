@@ -3,11 +3,11 @@ use std::collections::HashSet;
 use std::marker::PhantomData;
 use std::convert::TryInto;
 use std::fmt::Debug;
+use log::info;
 
 use ed25519_dalek::PublicKey as SPublicKey;
 use ed25519_dalek::Verifier;
 use crepe::crepe;
-use log::info;
 use serde::Serialize;
 
 use crate::hashing;
@@ -670,7 +670,7 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize, B: 
         let self_pk = self.trustee.keypair.public;
         let now = std::time::Instant::now();
         let svs = board.get_statements();
-        // info!("SVerifiers: {}", svs.len());
+        
         let mut facts: Vec<InputFact> = svs.iter()
             .map(|sv| sv.verify(board))
             .filter(|f| f.is_some())

@@ -6,7 +6,6 @@ use std::fs::File;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use crypto::cryptosystem::Plaintext;
 use rand::rngs::OsRng;
 use ed25519_dalek::{Keypair, PublicKey as SPublicKey};
 use serde::Serialize;
@@ -134,11 +133,11 @@ impl<C: Context + Serialize + DeserializeOwned + Eq, const W: usize, const T: us
             if let Some(decrypted_b) = self.board.get_unsafe(MemoryBulletinBoard::<C, W, T, P>::plaintexts(i, 0)) {
                 let decrypted: CPlaintexts<C, W> = bincode::deserialize(decrypted_b).unwrap();
                 let decrypted: Vec<Vec<u8>> = decrypted.plaintexts.iter().map(|p| {
-                    p.ser()
+                    p.0.ser()
                 }).collect();
 
                 let plaintexts: Vec<Vec<u8>> = self.all_plaintexts[i as usize].iter().map(|p| {
-                    p.ser()
+                    p.0.ser()
                 }).collect();
                 
                 let p1: HashSet<Vec<u8>> = HashSet::from_iter(plaintexts.into_iter());
@@ -233,7 +232,7 @@ fn demo_tui() {
     siv.set_theme(theme);
     
     let build = if cfg!(debug_assertions) {
-        "debug"
+        "slow as BOLLS"
     } else {
         "release"
     };
@@ -382,7 +381,7 @@ fn check<C: Context + Serialize + Eq + DeserializeOwned, const W: usize, const T
     demo.done(t);
 }
 
-/* 
+
 #[test]
 fn demo_ristretto() {
     CombinedLogger::init(
@@ -390,14 +389,14 @@ fn demo_ristretto() {
             TermLogger::new(LevelFilter::Info, simplelog::Config::default(), TerminalMode::Mixed)
         ]
     ).unwrap();
-    let group = RistrettoGroup;
-    demo(group);
+    // demo is hardcoded to 2, 2
+    demo::<RistrettoCtx, 3, 2, 2>();
 }
 
-fn demo<C: Context, const W: usize, const T: usize, const P: usize>() {
+fn demo<C: Context + Serialize + DeserializeOwned, const W: usize, const T: usize, const P: usize>() {
     
-    let local1 = "/tmp/local";
-    let local2 = "/tmp/local2";
+    let local1 = "./local";
+    let local2 = "./local2";
     let local_path = Path::new(&local1);
     fs::remove_dir_all(local_path).ok();
     fs::create_dir(local_path).ok();
@@ -416,13 +415,13 @@ fn demo<C: Context, const W: usize, const T: usize, const P: usize>() {
     trustee_pks.push(trustee2.keypair.public);
     
     let contests = 3;
-    let cfg = gen_config(contests, trustee_pks, bb_keypair.public);
+    let cfg = gen_config::<C, W, T, P>(contests, trustee_pks, bb_keypair.public);
     let cfg_b = bincode::serialize(&cfg).unwrap();
     let tmp_file = util::write_tmp(cfg_b).unwrap();
     bb.add_config(&ConfigPath(tmp_file.path().to_path_buf()));
     
-    let prot1: Protocol<C, W, T, P, MemoryBulletinBoard<E, G>> = Protocol::new(trustee1);
-    let prot2: Protocol<C, W, T, P,  MemoryBulletinBoard<E, G>> = Protocol::new(trustee2);
+    let prot1: Protocol<C, W, T, P, MemoryBulletinBoard<C, W, T, P>> = Protocol::new(trustee1);
+    let prot2: Protocol<C, W, T, P,  MemoryBulletinBoard<C, W, T, P>> = Protocol::new(trustee2);
 
     // mix position 0
     prot1.step(&mut bb);
@@ -451,12 +450,12 @@ fn demo<C: Context, const W: usize, const T: usize, const P: usize>() {
     
     println!("=================== ballots ===================");
     for i in 0..contests {
-        let pk_b = bb.get_unsafe(MemoryBulletinBoard::<E, G>::public_key(i, 0)).unwrap();
-        let pk: PublicKey<E, G> = bincode::deserialize(pk_b).unwrap();
+        let pk_b = bb.get_unsafe(MemoryBulletinBoard::<C, W, T, P>::public_key(i, 0)).unwrap();
+        let pk: PublicKey<C> = bincode::deserialize(pk_b).unwrap();
         
-        let (plaintexts, ciphertexts) = util::random_encrypt_ballots(100, &pk);
+        let (plaintexts, ciphertexts) = util::random_encrypt_ballots::<C, W, T>(100, &pk);
         all_plaintexts.push(plaintexts);
-        let ballots = Ballots { ciphertexts };
+        let ballots = CBallots { ciphertexts };
         let ballots_b = bincode::serialize(&ballots).unwrap();
         let ballots_h = hashing::hash(&ballots);
         let cfg_h = hashing::hash(&cfg);
@@ -495,19 +494,24 @@ fn demo<C: Context, const W: usize, const T: usize, const P: usize>() {
     prot1.step(&mut bb);
 
     for i in 0..contests {
-        let decrypted_b = bb.get_unsafe(MemoryBulletinBoard::<E, G>::plaintexts(i, 0)).unwrap();
-        let decrypted: Plaintexts<C> = bincode::deserialize(decrypted_b).unwrap();
-        let decoded: Vec<E::Plaintext> = decrypted.plaintexts.iter().map(|p| {
-            group.decode(&p)
+        let decrypted_b = bb.get_unsafe(MemoryBulletinBoard::<C, W, T, P>::plaintexts(i, 0)).unwrap();
+        let decrypted: CPlaintexts<C, W> = bincode::deserialize(decrypted_b).unwrap();
+        let decrypted: Vec<Vec<u8>> = decrypted.plaintexts.iter().map(|p| {
+            p.0.ser()
         }).collect();
-        let p1: HashSet<&E::Plaintext> = HashSet::from_iter(all_plaintexts[i as usize].iter().clone());
-        let p2: HashSet<&E::Plaintext> = HashSet::from_iter(decoded.iter().clone());
+
+        let plaintexts: Vec<Vec<u8>> = all_plaintexts[i as usize].iter().map(|p| {
+            p.0.ser()
+        }).collect();
+        
+        let p1: HashSet<Vec<u8>> = HashSet::from_iter(plaintexts.into_iter());
+        let p2: HashSet<Vec<u8>> = HashSet::from_iter(decrypted.into_iter());
         
         print!("Checking plaintexts contest=[{}]...", i);
         assert!(p1 == p2);
         println!("Ok");
     }
-}*/
+}
 
 struct DemoLogSink {
     pub cb_sink: cursive::CbSink,

@@ -2,7 +2,6 @@ use std::fmt;
 
 use crate::util::{short, shortm};
 use crate::protocol::*;
-// use strum::Display;
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq)]
 pub enum Act {
