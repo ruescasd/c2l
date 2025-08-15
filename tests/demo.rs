@@ -330,7 +330,7 @@ fn demo_tui() {
         
         s.call_on_name("facts", |view: &mut ScrollView<TextView>| {
             view.get_inner_mut().set_content(text);
-            view.get_inner_mut().append("\n\nArtifacts:\n");
+            view.get_inner_mut().append("\n\nArtifacts:\n\n");
             view.get_inner_mut().append(artifacts);
         });
     });

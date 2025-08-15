@@ -29,27 +29,6 @@ pub trait HashTo<T>: Send + Sync {
     fn hash_to(&self, bytes: &[u8]) -> T;
 }
 
-/*pub struct RistrettoHasher;
-
-impl HashTo<Scalar> for RistrettoHasher {
-    fn hash_to(&self, bytes: &[u8]) -> Scalar {
-        let mut hasher = Sha512::new();
-        hasher.update(bytes);
-
-        Scalar::from_hash(hasher)
-    }
-}
-
-impl HashTo<RistrettoPoint> for RistrettoHasher {
-    fn hash_to(&self, bytes: &[u8]) -> RistrettoPoint {
-        let mut hasher = Sha512::new();
-        hasher.update(bytes);
-
-        RistrettoPoint::from_hash(hasher)
-    }
-}*/
-
-
 fn first_bytes<T: HashBytes>(input: T) -> Vec<u8> {
     let mut bytes = input.get_bytes();
     let length = bytes.len() as u64;
@@ -96,28 +75,6 @@ pub fn hash_bytes_256(bytes: Vec<u8>) -> [u8; 32] {
     hasher.update(bytes);
     util::to_u8_32(&hasher.finalize().to_vec())
 }
-/* 
-impl HashBytes for RistrettoPoint {
-    fn get_bytes(&self) -> Vec<u8> {
-        self.compress().as_bytes().to_vec()
-    }
-}
-
-impl HashBytes for Scalar {
-    fn get_bytes(&self) -> Vec<u8> {
-        self.as_bytes().to_vec()
-    }
-}*/
-
-/* 
-use crate::ristretto_b::RistrettoGroup;
-
-impl HashBytes for RistrettoGroup {
-    fn get_bytes(&self) -> Vec<u8> {
-        vec![]
-    }
-}*/
-
 
 use ed25519_dalek::PublicKey as SPublicKey;
 

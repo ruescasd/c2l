@@ -41,18 +41,6 @@ pub trait Names {
 
 use crate::localstore::*;
 
-/*trait BasicBulletinBoard {
-    fn list(&self) -> Vec<String>;
-    fn get_stmts(&self) -> Vec<String> {
-        self.list().into_iter().filter(|s| {
-            s.ends_with(".stmt")
-        }).collect()
-    }
-    fn get_config_unsafe(&self) -> Option<Config>;
-    fn get<A: HashBytes + DeserializeOwned>(&self, target: String, hash: Hash) -> Result<A, String>;
-    fn put(&mut self, name: &str, data: &Path);
-}*/
-
 pub trait BulletinBoard<C: Context, const W: usize, const T: usize, const P: usize> {
 
     fn list(&self) -> Vec<String>;
@@ -91,60 +79,4 @@ pub trait BulletinBoard<C: Context, const W: usize, const T: usize, const P: usi
         }).collect()
     }
     
-    /*fn add_error(&self, error: Path, position: u32);
-  
-    fn get_config_statement(&self) -> Option<Vec<u8>>;
-
-    fn get_config_signature(&self, auth: u32) -> Option<Vec<u8>>;
-
-    
-    fn get_share_statement(&self, contest: u32, auth: u32) -> Option<Vec<u8>>;
-
-    fn get_share_signature(&self, contest: u32, auth: u32) -> Option<Vec<u8>>;
-
-    fn add_public_key(&self, public_key: Path, stmt: Path, sig: Path, contest: u32, auth: u32);
-
-    fn add_public_key_signature(&self, sig: Path, contest: u32, auth: u32);
-
-    fn get_public_key(&self, contest: u32) -> Option<Vec<u8>>;
-
-    fn get_public_key_statement(&self, contest: u32) -> Option<Vec<u8>>;
-
-    fn get_public_key_signature(&self, contest: u32, auth: u32) -> Option<Vec<u8>>;
-
-    fn get_ballots(&self, contest: u32) -> Option<Vec<u8>>;
-
-    fn get_ballots_statement(&self, contest: u32) -> Option<Vec<u8>>;
-
-    fn get_ballots_signature(&self, contest: u32) -> Option<Vec<u8>>;
-
-    fn add_ballots(&self, ballots: Path, stmt: Path, sig: Path, contest: u32);
-
-    fn get_mix(&self, contest: u32, auth: u32) -> Option<Vec<u8>>;
-
-    fn get_mix_statement(&self, contest: u32, auth: u32) -> Option<Vec<u8>>;
-
-    fn get_mix_signature(&self, contest: u32, auth: u32, auth2: u32) -> Option<Vec<u8>>;
-
-    fn add_mix(&self, mix: Path, stmt: Path, sig: Path, contest: u32, auth: u32);
-
-    fn add_mix_signature(&self, sig: Path, contest: u32, auth_mixer: u32, auth_signer: u32);
-
-    fn get_decryption(&self, contest: u32, auth: u32) -> Option<Vec<u8>>;
-
-    fn get_decryption_statement(&self, contest: u32, auth: u32) -> Option<Vec<u8>>;
-
-    fn get_decryption_signature(&self, contest: u32, auth: u32) -> Option<Vec<u8>>;
-
-    fn add_decryption(&self, decryption: Path, stmt: Path, sig: Path, contest: u32, auth: u32);
-
-    fn get_plaintexts(&self, contest: u32, auth: u32) -> Option<Vec<u8>>;
-
-    fn get_plaintexts_statement(&self, contest: u32, auth: u32) -> Option<Vec<u8>>;
-
-    fn get_plaintexts_signature(&self, contest: u32, auth: u32) -> Option<Vec<u8>>;
-
-    fn add_plaintexts(&self, plau32exts: Path, stmt: Path, sig: Path, contest: u32, auth: u32);
-
-    fn add_plaintexts_signature(&self, sig: Path, contest: u32, auth: u32);*/
 }

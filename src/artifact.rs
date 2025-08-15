@@ -3,7 +3,6 @@ use crypto::dkgd::{DecryptionFactor, VerifiableShares};
 use ed25519_dalek::PublicKey as SPublicKey;
 use serde::{Deserialize, Serialize};
 
-// use crypto::cryptosystem::elgamal::{Ciphertext as CCiphertext, KeyPair as CKeyPair, PublicKey as CPublicKey};
 use crypto::cryptosystem::naoryung::{Ciphertext as NYCiphertext};
 use crypto::cryptosystem::Plaintext;
 use crypto::zkp::shuffle::ShuffleProof as CShuffleProof;
