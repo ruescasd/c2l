@@ -6,7 +6,7 @@ use core::fmt::Debug;
 use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::traits::Identity;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq)]
 pub struct RistrettoElement(pub RistrettoPoint);
 
 impl RistrettoElement {

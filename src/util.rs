@@ -5,19 +5,12 @@ use std::fs::OpenOptions;
 use std::fs;
 use std::io;
 
-use rand::rngs::OsRng;
-use rand::RngCore;
-use curve25519_dalek::ristretto::{RistrettoPoint};
+use crypto::cryptosystem::Plaintext;
+use crypto::cryptosystem::naoryung::{Ciphertext, PublicKey};
 use rayon::prelude::*;
 use chrono::{DateTime, Utc};
 use tempfile::NamedTempFile;
 use uuid::Uuid;
-
-use crate::group::Group;
-use crate::arithm::Element;
-use crate::elgamal::*;
-use crate::artifact::*;
-use crate::ristretto_b::RistrettoGroup;
 
 pub fn read_file_bytes(path: &Path) -> io::Result<Vec<u8>> {
     fs::read(path)
@@ -77,45 +70,21 @@ pub fn modify_file(file: &str) {
     writeln!(file, "New line at {}", now).unwrap();
 }
 
-pub fn random_ristretto_ballots<G: Group<RistrettoPoint>>(n: usize, group: &G) -> Ballots<RistrettoPoint> {
+use crypto::context::Context;
+use crypto::traits::GroupElement;
 
-    let cs = (0..n).into_par_iter().map(|_| {
-            Ciphertext{
-                a: group.rnd(),
-                b: group.rnd()
-            }
+
+pub fn random_encrypt_ballots<C: Context, const W: usize, const T: usize>(n: usize, pk: &PublicKey<C>) -> (Vec<Plaintext<C, W>>, Vec<Ciphertext<C, W>>) {
+    
+    let plaintexts: Vec<Plaintext<C, W>> = (0..n).into_par_iter().map(|_| {
+        let mut rng = C::get_rng();    
+        Plaintext(<[C::Element; W]>::random(&mut rng))
+
     }).collect();
 
-    Ballots {
-        ciphertexts: cs
-    }
-}
-
-pub fn random_ristretto_encrypt_ballots(n: usize, pk: &PublicKey<RistrettoPoint, RistrettoGroup>) -> (Vec<[u8; 30]>, Vec<Ciphertext<RistrettoPoint>>) {
-    
-    let (plaintexts,cs) = (0..n).into_par_iter().map(|_| {
-        let mut csprng = OsRng;
-        let mut value = [0u8;30];
-        csprng.fill_bytes(&mut value);        
-        let encoded = pk.group.encode(&value);
-        let encrypted = pk.encrypt(&encoded);
-        (value, encrypted)
-        
-    }).unzip();
-
-    
-    (plaintexts, cs)
-}
-
-pub fn random_encrypt_ballots<E: Element, G: Group<E>>(n: usize, pk: &PublicKey<E, G>) -> (Vec<E::Plaintext>, Vec<Ciphertext<E>>) {
-    
-    let plaintexts: Vec<E::Plaintext> = (0..n).into_par_iter().map(|_| {
-        pk.group.rnd_plaintext()
-    }).collect();
-
-    let cs: Vec<Ciphertext<E>> = plaintexts.par_iter().map(|p| {
-            let encoded = pk.group.encode(&p);
-            let encrypted = pk.encrypt(&encoded);
+    let cs: Vec<Ciphertext<C, W>> = plaintexts.par_iter().map(|p| {
+            // let encoded = pk.group.encode(&p);
+            let encrypted = pk.encrypt(&p.0);
             // (value, encrypted)
             encrypted
         

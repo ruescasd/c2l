@@ -1,13 +1,11 @@
 use std::marker::{Send, Sync};
 
-use curve25519_dalek::ristretto::RistrettoPoint;
-use curve25519_dalek::scalar::Scalar;
+use crypto::dkgd::DecryptionFactor;
+use crypto::dkgd::DkgCiphertext;
+use crypto::cryptosystem::naoryung::{Ciphertext as NYCiphertext, PublicKey};
+use crypto::cryptosystem::elgamal::{Ciphertext as EGCiphertext};
 use sha2::{Sha512, Sha256, Digest};
 
-use crate::arithm::*;
-use crate::elgamal::*;
-use crate::group::*;
-use crate::shuffler::{YChallengeInput, TValues};
 
 pub type Hash = [u8; 64];
 
@@ -31,7 +29,7 @@ pub trait HashTo<T>: Send + Sync {
     fn hash_to(&self, bytes: &[u8]) -> T;
 }
 
-pub struct RistrettoHasher;
+/*pub struct RistrettoHasher;
 
 impl HashTo<Scalar> for RistrettoHasher {
     fn hash_to(&self, bytes: &[u8]) -> Scalar {
@@ -49,7 +47,7 @@ impl HashTo<RistrettoPoint> for RistrettoHasher {
 
         RistrettoPoint::from_hash(hasher)
     }
-}
+}*/
 
 
 fn first_bytes<T: HashBytes>(input: T) -> Vec<u8> {
@@ -77,67 +75,6 @@ fn concat_bytes<T: HashBytes>(cs: &Vec<T>) -> Vec<u8> {
     concat_bytes_iter(cs)
 }
 
-pub fn shuffle_proof_us<E: Element>(es: &Vec<Ciphertext<E>>, e_primes: &Vec<Ciphertext<E>>, 
-    cs: &Vec<E>, exp_hasher: &dyn HashTo<E::Exp>, n: usize) -> Vec<E::Exp> {
-    
-    let mut prefix_vector = concat_bytes(es);
-    prefix_vector.extend(concat_bytes(e_primes));
-    prefix_vector.extend(concat_bytes(cs));
-    
-    // optimization: instead of calculating u = H(prefix || i), 
-    // we do u = H(H(prefix) | i)
-    // that way we avoid allocating prefix-size bytes n times
-    let mut hasher = Sha512::new();
-    hasher.update(prefix_vector);
-    let prefix_hash = hasher.finalize().to_vec();
-    let mut ret = Vec::with_capacity(n);
-    
-    for i in 0..n {
-        let mut next = prefix_hash.clone();
-        next.extendl(&i.to_le_bytes().to_vec());
-        
-        let u: E::Exp = exp_hasher.hash_to(&next);
-        ret.push(u);
-    }
-
-    ret
-}
-
-pub fn shuffle_proof_challenge<E: Element, G: Group<E>>(y: &YChallengeInput<E, G>, 
-    t: &TValues<E>, exp_hasher: &dyn HashTo<E::Exp>) -> E::Exp {
-
-    let mut bytes = concat_bytes(&y.es);
-    bytes.extend(concat_bytes(&y.e_primes));
-    bytes.extend(concat_bytes(&y.cs));
-    bytes.extend(concat_bytes(&y.c_hats));
-    bytes.extend(y.pk.value.get_bytes());
-    
-    bytes.extend(t.t1.get_bytes());
-    bytes.extend(t.t2.get_bytes());
-    bytes.extend(t.t3.get_bytes());
-    bytes.extend(t.t4_1.get_bytes());
-    bytes.extend(t.t4_2.get_bytes());
-    bytes.extend(concat_bytes(&t.t_hats));
-
-    exp_hasher.hash_to(&bytes)
-}
-
-pub fn schnorr_proof_challenge<E: Element>(g: &E, public: &E, 
-    commitment: &E, exp_hasher: &dyn HashTo<E::Exp>) -> E::Exp {
-    let values = [g, public, commitment].to_vec();
-
-    let bytes = concat_bytes_iter(values);
-    exp_hasher.hash_to(&bytes)
-}
-
-pub fn cp_proof_challenge<E: Element>(g1: &E, g2: &E, public1: &E, public2: &E, 
-    commitment1: &E, commitment2: &E, exp_hasher: &dyn HashTo<E::Exp>) -> E::Exp {
-    let values = [g1, g2, public1, public2, commitment1, commitment2].to_vec();
-    
-    let bytes = concat_bytes_iter(values);
-    exp_hasher.hash_to(&bytes)
-}
-
 use crate::util;
 
 pub fn hash<T: HashBytes>(data: &T) -> [u8; 64] {
@@ -159,16 +96,7 @@ pub fn hash_bytes_256(bytes: Vec<u8>) -> [u8; 32] {
     hasher.update(bytes);
     util::to_u8_32(&hasher.finalize().to_vec())
 }
-
-impl<E: Element + HashBytes> HashBytes for Ciphertext<E> {
-    fn get_bytes(&self) -> Vec<u8> {
-        let mut ret = self.a.get_bytes();
-        ret.extend(self.b.get_bytes());
-
-        ret
-    }
-}
-
+/* 
 impl HashBytes for RistrettoPoint {
     fn get_bytes(&self) -> Vec<u8> {
         self.compress().as_bytes().to_vec()
@@ -179,102 +107,17 @@ impl HashBytes for Scalar {
     fn get_bytes(&self) -> Vec<u8> {
         self.as_bytes().to_vec()
     }
-}
+}*/
 
-
+/* 
 use crate::ristretto_b::RistrettoGroup;
 
 impl HashBytes for RistrettoGroup {
     fn get_bytes(&self) -> Vec<u8> {
         vec![]
     }
-}
+}*/
 
-use crate::group::Schnorr;
-use crate::group::ChaumPedersen;
-
-impl<E: Element> HashBytes for Schnorr<E> {
-    fn get_bytes(&self) -> Vec<u8> {
-        let mut bytes = self.commitment.get_bytes();
-        bytes.extend(self.challenge.get_bytes());
-        bytes.extend(self.response.get_bytes());
-
-        bytes
-    }
-}
-
-impl<E: Element> HashBytes for ChaumPedersen<E> {
-    fn get_bytes(&self) -> Vec<u8> {
-        let mut bytes = self.commitment1.get_bytes();
-        bytes.extend(self.commitment2.get_bytes());
-        bytes.extend(self.challenge.get_bytes());
-        bytes.extend(self.response.get_bytes());
-
-        bytes
-    }
-}
-
-use crate::shuffler::ShuffleProof;
-use crate::shuffler::Responses;
-
-impl<E: Element> HashBytes for TValues<E> {
-    fn get_bytes(&self) -> Vec<u8> {
-        let mut bytes = self.t1.get_bytes();
-        bytes.extend(self.t2.get_bytes());
-        bytes.extend(self.t3.get_bytes());
-        bytes.extend(self.t4_1.get_bytes());
-        bytes.extend(self.t4_2.get_bytes());
-        bytes.extend(concat_bytes(&self.t_hats));
-
-        bytes
-    }
-}
-
-impl<E: Element> HashBytes for Responses<E> {
-    fn get_bytes(&self) -> Vec<u8> {
-        let mut bytes = self.s1.get_bytes();
-        bytes.extend(self.s2.get_bytes());
-        bytes.extend(self.s3.get_bytes());
-        bytes.extend(self.s4.get_bytes());
-        bytes.extend(concat_bytes(&self.s_hats));
-        bytes.extend(concat_bytes(&self.s_primes));
-
-        bytes
-    }
-}
-
-impl<E: Element> HashBytes for ShuffleProof<E> {
-    fn get_bytes(&self) -> Vec<u8> {
-        let mut bytes = self.t.get_bytes();
-        bytes.extend(self.s.get_bytes());
-        bytes.extend(concat_bytes(&self.cs));
-        bytes.extend(concat_bytes(&self.c_hats));
-
-        bytes
-    }
-}
-
-use crate::elgamal::PrivateKey;
-use crate::elgamal::PublicKey;
-
-impl<E: Element, G: Group<E>> HashBytes for PrivateKey<E, G> {
-    fn get_bytes(&self) -> Vec<u8> {
-        let mut bytes = self.value.get_bytes();
-        bytes.extend(self.public_value.get_bytes());
-        bytes.extend(self.group.get_bytes());
-
-        bytes
-    }
-}
-
-impl<E: Element, G: Group<E>> HashBytes for PublicKey<E, G> {
-    fn get_bytes(&self) -> Vec<u8> {
-        let mut bytes = self.value.get_bytes();
-        bytes.extend(self.group.get_bytes());
-
-        bytes
-    }
-}
 
 use ed25519_dalek::PublicKey as SPublicKey;
 
@@ -319,12 +162,13 @@ impl HashBytes for SignedStatement {
     }
 }
 
-use crate::artifact::Config;
+use crate::artifact::CConfig;
+use crypto::context::Context;
 
-impl<E: Element, G: Group<E>> HashBytes for Config<E, G> {
+
+impl<C: Context> HashBytes for CConfig<C> {
     fn get_bytes(&self) -> Vec<u8> {
         let mut bytes = self.id.to_vec();
-        bytes.extend(self.group.get_bytes());
         bytes.extend(&self.contests.to_le_bytes());
         bytes.extend(self.ballotbox.get_bytes());
         bytes.extend(concat_bytes(&self.trustees));
@@ -333,69 +177,86 @@ impl<E: Element, G: Group<E>> HashBytes for Config<E, G> {
     }
 }
 
-use crate::artifact::Keyshare;
+use crate::artifact::CKeyshares;
 
-impl<E: Element, G: Group<E>> HashBytes for Keyshare<E, G> {
+impl<C: Context, const T: usize, const P: usize> HashBytes for CKeyshares<C, T, P> {
     fn get_bytes(&self) -> Vec<u8> {
-        let mut bytes = self.share.get_bytes();
-        bytes.extend(self.proof.get_bytes());
+        let bytes = bincode::serialize(&self.shares).unwrap();
 
         bytes
     }
 }
 
-use crate::artifact::EncryptedPrivateKey;
+use crate::artifact::CBallots;
 
-impl HashBytes for EncryptedPrivateKey {
+impl<C: Context, const W: usize, const T: usize> HashBytes for DkgCiphertext<C, W, T> {
     fn get_bytes(&self) -> Vec<u8> {
-        let mut bytes = self.bytes.to_vec();
-        bytes.extend(self.iv.clone());
-
-        bytes
+        bincode::serialize(&self).unwrap()
     }
 }
 
-/* use crate::artifact::Pk;
-
-impl<E: Element, G: Group<E>> HashBytes for Pk<E, G> {
+impl<C: Context, const W: usize> HashBytes for NYCiphertext<C, W> {
     fn get_bytes(&self) -> Vec<u8> {
-        self.value.get_bytes()
+        bincode::serialize(&self).unwrap()
     }
-}*/
+}
 
-use crate::artifact::Ballots;
+impl<C: Context, const W: usize> HashBytes for EGCiphertext<C, W> {
+    fn get_bytes(&self) -> Vec<u8> {
+        bincode::serialize(&self).unwrap()
+    }
+}
 
-impl<E: Element> HashBytes for Ballots<E> {
+impl<C: Context, const W: usize> HashBytes for DecryptionFactor<C, W> {
+    fn get_bytes(&self) -> Vec<u8> {
+        bincode::serialize(&self).unwrap()
+    }
+}
+
+impl<C: Context> HashBytes for PublicKey<C> {
+    fn get_bytes(&self) -> Vec<u8> {
+        bincode::serialize(&self).unwrap()
+    }
+}
+
+use crypto::cryptosystem::Plaintext;
+
+impl<C: Context, const W: usize> HashBytes for Plaintext<C, W> {
+    fn get_bytes(&self) -> Vec<u8> {
+        bincode::serialize(&self).unwrap()
+    }
+}
+
+impl<C: Context, const W: usize> HashBytes for CBallots<C, W> {
     fn get_bytes(&self) -> Vec<u8> {
         concat_bytes(&self.ciphertexts)
     }
 }
 
-use crate::artifact::Mix;
+use crate::artifact::CMix;
 
-impl<E: Element> HashBytes for Mix<E> {
+impl<C: Context, const W: usize, const T: usize> HashBytes for CMix<C, W, T> {
     fn get_bytes(&self) -> Vec<u8> {
         let mut bytes = concat_bytes(&self.mixed_ballots);
-        bytes.extend(self.proof.get_bytes());
+        bytes.extend(bincode::serialize(&self.proof).unwrap());
 
         bytes
     }
 }
 
-use crate::artifact::PartialDecryption;
+use crate::artifact::CPartialDecryption;
 
-impl<E: Element> HashBytes for PartialDecryption<E> {
+impl<C: Context, const W: usize>  HashBytes for CPartialDecryption<C, W> {
     fn get_bytes(&self) -> Vec<u8> {
-        let mut bytes = concat_bytes(&self.pd_ballots);
-        bytes.extend(concat_bytes(&self.proofs));
+        let bytes = concat_bytes(&self.pd_ballots);
 
         bytes
     }
 }
 
-use crate::artifact::Plaintexts;
+use crate::artifact::CPlaintexts;
 
-impl<E: Element> HashBytes for Plaintexts<E> {
+impl<C: Context, const W: usize> HashBytes for CPlaintexts<C, W> {
     fn get_bytes(&self) -> Vec<u8> {
         concat_bytes(&self.plaintexts)
     }
@@ -456,12 +317,13 @@ impl HashBytes for Act {
                 v.extendl(&pk_h.to_vec());
                 v
             }
-            Act::PartialDecrypt(h, i, bs, share_h) => {
+            Act::PartialDecrypt(h, i, bs, share_hs) => {
                 let mut v = vec![7u8];
                 v.extendl(&h.to_vec());
                 v.extendl(&i.to_le_bytes().to_vec());
                 v.extendl(&bs.to_vec());
-                v.extendl(&share_h.to_vec());
+                // v.extendl(&share_h.to_vec());
+                 v.extendl(&concat_bytes_iter(share_hs));
                 v
             }
             Act::CombineDecryptions(h, i, ds, mix_h, shares) => {

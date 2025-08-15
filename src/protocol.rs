@@ -4,19 +4,17 @@ use std::marker::PhantomData;
 use std::convert::TryInto;
 use std::fmt::Debug;
 
-use serde::de::DeserializeOwned;
 use ed25519_dalek::PublicKey as SPublicKey;
 use ed25519_dalek::Verifier;
 use crepe::crepe;
 use log::info;
+use serde::Serialize;
 
 use crate::hashing;
 use crate::hashing::*;
 use crate::statement::*;
 use crate::bb::*;
 use crate::util;
-use crate::arithm::Element;
-use crate::group::Group;
 use crate::action::Act;
 use crate::util::short;
 use crate::trustee::Trustee;
@@ -48,7 +46,7 @@ pub struct SVerifier {
 
 impl SVerifier {
     
-    fn verify<E: Element, G: Group<E>, B: BulletinBoard<E, G>>(&self, board: &B) -> Option<InputFact> {
+    fn verify<C: Context, const W: usize, const T: usize, const P: usize, B: BulletinBoard<C, W, T, P>>(&self, board: &B) -> Option<InputFact> {
         let statement = &self.statement.statement;
         let config = board.get_config_unsafe()?;
         
@@ -519,11 +517,11 @@ crepe! {
         MixSignedBy(config, contest, mix_ballots_hash, _, mixer_t - 1, _),
         !MixSignedBy(config, contest, mix_hash, mix_ballots_hash, mixer_t, self_t);
     
-    Do(Act::PartialDecrypt(config, contest, mix_hash, share)) <- 
+    Do(Act::PartialDecrypt(config, contest, mix_hash, shares)) <- 
         PkOk(config, contest, _pk_hash),
         ConfigPresent(config, _n_trustees, _, self_t),
         ConfigOk(config),
-        PkShareSignedBy(config, contest, share, self_t),
+        PkSharesAll(config, contest, shares),
         ContestMixedOk(config, contest, mix_hash),
         !DecryptionSignedBy(config, contest, _, self_t);
 
@@ -652,15 +650,15 @@ fn array_set(mut input: Hashes, index: u32, value: Hash) -> Hashes {
     input
 }
 
-pub struct Protocol <E, G, B> {
-    trustee: Trustee<E, G>,
+use crypto::context::Context;
+pub struct Protocol <C: Context, const W: usize, const T: usize, const P: usize,B> {
+    trustee: Trustee<C, W, T, P>,
     phantom_b: PhantomData<B>
 }
 
-impl<E: Element + DeserializeOwned + std::cmp::PartialEq, G: Group<E> + DeserializeOwned,
-    B: BulletinBoard<E, G>> Protocol<E, G, B> {
+impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize, B: BulletinBoard<C, W, T, P>> Protocol<C, W, T, P, B> {
 
-    pub fn new(trustee: Trustee<E, G>) -> Protocol<E, G, B> {
+    pub fn new(trustee: Trustee<C, W, T, P>) -> Protocol<C, W, T, P, B> {
         Protocol {
             trustee,
             phantom_b: PhantomData

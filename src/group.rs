@@ -1,9 +1,9 @@
 use std::marker::{Send, Sync};
 use serde::{Deserialize, Serialize};
 
-use crate::arithm::*;
+
 use crate::hashing::*;
-use crate::elgamal::*;
+
 
 pub trait Group<E: Element>: Serialize + HashBytes + Send + Sync + Sized + Clone {
     

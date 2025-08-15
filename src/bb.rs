@@ -1,8 +1,7 @@
 use crate::hashing::{Hash};
 use crate::artifact::*;
-use crate::elgamal::PublicKey;
-use crate::arithm::Element;
-use crate::group::Group;
+use crypto::context::Context;
+use crypto::cryptosystem::naoryung::PublicKey;
 use crate::protocol::SVerifier;
 
 pub trait Names {
@@ -54,36 +53,36 @@ use crate::localstore::*;
     fn put(&mut self, name: &str, data: &Path);
 }*/
 
-pub trait BulletinBoard<E: Element, G: Group<E>> {
+pub trait BulletinBoard<C: Context, const W: usize, const T: usize, const P: usize> {
 
     fn list(&self) -> Vec<String>;
     
     fn add_config(&mut self, config: &ConfigPath);
-    fn get_config_unsafe(&self) -> Option<Config<E, G>>;
+    fn get_config_unsafe(&self) -> Option<CConfig<C>>;
     
     fn add_config_stmt(&mut self, stmt: &ConfigStmtPath, trustee: u32);
-    fn get_config(&self, hash: Hash) -> Option<Config<E, G>>;
+    fn get_config(&self, hash: Hash) -> Option<CConfig<C>>;
     
     fn add_share(&mut self, path: &KeysharePath, contest: u32, trustee: u32);
-    fn get_share(&self, contest: u32, trustee: u32, hash: Hash) -> Option<Keyshare<E, G>>;
+    fn get_shares(&self, contest: u32, hashes: Vec<Hash>) -> Option<[CKeyshares<C, T, P>; P]>;
     
     fn set_pk(&mut self, path: &PkPath, contest: u32);
     fn set_pk_stmt(&mut self, path: &PkStmtPath, contest: u32, trustee: u32);
-    fn get_pk(&mut self, contest: u32, hash: Hash) -> Option<PublicKey<E, G>>;
+    fn get_pk(&mut self, contest: u32, hash: Hash) -> Option<PublicKey<C>>;
 
     fn add_ballots(&mut self, path: &BallotsPath, contest: u32);
-    fn get_ballots(&self, contest: u32, hash: Hash) -> Option<Ballots<E>>;
+    fn get_ballots(&self, contest: u32, hash: Hash) -> Option<CBallots<C, W>>;
     
     fn add_mix(&mut self, path: &MixPath, contest: u32, trustee: u32);
     fn add_mix_stmt(&mut self, path: &MixStmtPath, contest: u32, trustee: u32, other_t: u32);
-    fn get_mix(&self, contest: u32, trustee: u32, hash: Hash) -> Option<Mix<E>>;
+    fn get_mix(&self, contest: u32, trustee: u32, hash: Hash) -> Option<CMix<C, W, T>>;
 
     fn add_decryption(&mut self, path: &PDecryptionsPath, contest: u32, trustee: u32);
-    fn get_decryption(&self, contest: u32, trustee: u32, hash: Hash) -> Option<PartialDecryption<E>>;
+    fn get_decryption(&self, contest: u32, trustee: u32, hash: Hash) -> Option<CPartialDecryption<C, W>>;
 
     fn set_plaintexts(&mut self, path: &PlaintextsPath, contest: u32);
     fn set_plaintexts_stmt(&mut self, path: &PlaintextsStmtPath, contest: u32, trustee: u32);
-    fn get_plaintexts(&self, contest: u32, hash: Hash) -> Option<Plaintexts<E>>;
+    fn get_plaintexts(&self, contest: u32, hash: Hash) -> Option<CPlaintexts<C, W>>;
 
     fn get_statements(&self) -> Vec<SVerifier>;
     fn get_stmts(&self) -> Vec<String> {

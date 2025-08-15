@@ -12,7 +12,7 @@ use crate::utils::signatures::Ed25519;
 use crate::utils::signatures::Signatures;
 
 pub trait Context: private::Sealed + std::fmt::Debug + PartialEq + 'static + Clone {
-    type Element: GroupElement<Scalar = Self::Scalar> + FSer + VSer + Clone + Send + Sync;
+    type Element: GroupElement<Scalar = Self::Scalar> + FSer + VSer + Clone + Send + Sync + Eq;
     type Scalar: GroupScalar + FSer + VSer + Clone + Send + Sync + From<u32>;
     type Hasher: Hasher;
     type R: Rng;
@@ -46,6 +46,8 @@ pub trait Context: private::Sealed + std::fmt::Debug + PartialEq + 'static + Clo
     fn generator() -> Self::Element {
         Self::G::generator()
     }
+
+    fn get_name() -> String;
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -58,8 +60,10 @@ impl Context for P256Ctx {
     type Signatures = Ed25519<Self::R>;
 
     type G = P256Group;
+
+    fn get_name() -> String { "P256Ctx".into() }
 }
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq)]
 pub struct RistrettoCtx;
 impl Context for RistrettoCtx {
     type Element = <Self::G as CryptoGroup>::Element;
@@ -69,6 +73,8 @@ impl Context for RistrettoCtx {
     type Signatures = Ed25519<Self::R>;
 
     type G = Ristretto255Group;
+
+    fn get_name() -> String { "RistrettoCtx".into() }
 }
 
 mod private {

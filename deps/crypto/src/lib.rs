@@ -17,7 +17,7 @@ pub mod context;
 pub mod cryptosystem;
 /// Distributed key generation and decryption funcionality (generic).
 #[crate::warning(
-    "Asserts are present in this module. Missing checks for threshold validity (P >= T)"
+    "Asserts are present in this module. Missing checks for threshold validity (P < T). Not optimized."
 )]
 pub mod dkgd;
 /// Concrete implementations of curve arithmetic.

@@ -9,9 +9,9 @@ use crate::traits::scalar::Narrow as NarrowS;
 use crate::traits::scalar::Widen as WidenS;
 use crate::utils::hash;
 use crate::utils::serialization::VSerializable;
+use vser_derive::VSerializable as VSer;
 use rand::seq::SliceRandom;
 use sha3::Digest;
-use vser_derive::VSerializable as VSer;
 
 use rayon::prelude::*;
 
@@ -500,6 +500,7 @@ impl<C: Context, const W: usize> ShuffleProof<C, W> {
     }
 }
 
+
 #[derive(Debug, VSer, PartialEq)]
 pub struct ShuffleCommitments<C: Context, const W: usize> {
     big_b_n: Vec<C::Element>,
@@ -649,6 +650,7 @@ where
     }
 }
 
+#[crate::warning("Missing tests for serialization of shuffle data")]
 #[cfg(test)]
 mod tests {
     use std::array;
@@ -658,7 +660,6 @@ mod tests {
     use crate::context::RistrettoCtx as RCtx;
     use crate::cryptosystem::elgamal::Ciphertext;
     use crate::cryptosystem::elgamal::KeyPair;
-    use crate::cryptosystem::elgamal::PublicKey;
     use crate::traits::group::CryptoGroup;
     use crate::zkp::shuffle::Shuffler;
 
@@ -699,9 +700,8 @@ mod tests {
         let ciphertexts: Vec<Ciphertext<C, W>> =
             messages.iter().map(|m| keypair.encrypt(m)).collect();
 
-        let pk: PublicKey<C> = PublicKey::new(keypair.pkey.clone());
         let generators = C::G::ind_generators(count, &vec![]);
-        let shuffler = Shuffler::<C, W>::new(generators, pk);
+        let shuffler = Shuffler::<C, W>::new(generators, keypair.pkey);
 
         let (pciphertexts, proof) = shuffler.shuffle(&ciphertexts, &vec![]);
         let ok = shuffler.verify(&ciphertexts, &pciphertexts, &proof, &vec![]);
@@ -721,9 +721,8 @@ mod tests {
         let ciphertexts: Vec<Ciphertext<C, W>> =
             messages.iter().map(|m| keypair.encrypt(m)).collect();
 
-        let pk: PublicKey<C> = PublicKey::new(keypair.pkey.clone());
         let generators = C::G::ind_generators(count, &vec![]);
-        let shuffler = Shuffler::<C, W>::new(generators, pk);
+        let shuffler = Shuffler::<C, W>::new(generators, keypair.pkey);
 
         let (pciphertexts, proof) = shuffler.shuffle(&ciphertexts, &vec![1u8]);
         let ok = shuffler.verify(&ciphertexts, &pciphertexts, &proof, &vec![2u8]);

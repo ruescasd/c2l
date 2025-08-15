@@ -127,7 +127,7 @@ mod tests {
 
     fn test_pleq_proof_valid<Ctx: Context>() {
         let eg = EGKeyPair::<Ctx>::generate();
-        let ny = KeyPair::generate(&eg);
+        let ny = KeyPair::new(&eg, Ctx::random_element());
 
         let msg = [Ctx::random_element(), Ctx::random_element()];
         let mut rng = Ctx::get_rng();
@@ -135,8 +135,8 @@ mod tests {
         let ciphertext = ny.encrypt_with_r(&msg, &r);
 
         let proof = PlEqProof::<Ctx, 2>::prove(
-            &ny.pk_b,
-            &ny.pk_a,
+            &ny.pkey.pk_b,
+            &ny.pkey.pk_a,
             &ciphertext.u_b,
             &ciphertext.v_b,
             &ciphertext.u_a,
@@ -144,8 +144,8 @@ mod tests {
         );
 
         let ok = proof.verify(
-            &ny.pk_b,
-            &ny.pk_a,
+            &ny.pkey.pk_b,
+            &ny.pkey.pk_a,
             &ciphertext.u_b,
             &ciphertext.v_b,
             &ciphertext.u_a,
@@ -159,8 +159,8 @@ mod tests {
         let tampered_proof = PlEqProof::<Ctx, 2>::new(proof.big_a, tampered_k);
 
         let not_ok = tampered_proof.verify(
-            &ny.pk_b,
-            &ny.pk_a,
+            &ny.pkey.pk_b,
+            &ny.pkey.pk_a,
             &ciphertext.u_b,
             &ciphertext.v_b,
             &ciphertext.u_a,
@@ -171,7 +171,7 @@ mod tests {
 
     fn test_pleq_proof_serialization<Ctx: Context>() {
         let eg = EGKeyPair::<Ctx>::generate();
-        let ny = KeyPair::generate(&eg);
+        let ny = KeyPair::new(&eg, Ctx::random_element());
 
         let msg = [Ctx::random_element(), Ctx::random_element()];
         let mut rng = Ctx::get_rng();
@@ -179,8 +179,8 @@ mod tests {
         let ciphertext = ny.encrypt_with_r(&msg, &r);
 
         let proof = PlEqProof::<Ctx, 2>::prove(
-            &ny.pk_b,
-            &ny.pk_a,
+            &ny.pkey.pk_b,
+            &ny.pkey.pk_a,
             &ciphertext.u_b,
             &ciphertext.v_b,
             &ciphertext.u_a,
@@ -190,8 +190,8 @@ mod tests {
         let proof_d = PlEqProof::<Ctx, 2>::deser_f(&bytes).unwrap();
 
         let ok = proof_d.verify(
-            &ny.pk_b,
-            &ny.pk_a,
+            &ny.pkey.pk_b,
+            &ny.pkey.pk_a,
             &ciphertext.u_b,
             &ciphertext.v_b,
             &ciphertext.u_a,

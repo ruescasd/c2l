@@ -5,11 +5,13 @@ use crate::utils::Error;
 use crate::utils::hash;
 use crate::utils::rng;
 
+use std::hash::Hash;
+
 pub trait CryptoGroup {
     type Element: GroupElement<Scalar = Self::Scalar>;
     type Scalar: GroupScalar;
     type Hasher: hash::Hasher;
-    type Plaintext;
+    type Plaintext: Hash + PartialEq + Eq;
     type Message;
 
     fn generator() -> Self::Element;

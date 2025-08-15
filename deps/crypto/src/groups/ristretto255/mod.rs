@@ -69,8 +69,8 @@ impl CryptoGroup for Ristretto255Group {
         ))
     }
 
-    fn decode(msg: &Self::Message) -> Result<Self::Plaintext, Error> {
-        let compressed = msg.0.compress();
+    fn decode(message: &Self::Message) -> Result<Self::Plaintext, Error> {
+        let compressed = message.0.compress();
         // the 30 bytes of data are placed in the range 1-30
         let slice = &compressed.as_bytes()[1..31];
         let ret: Self::Plaintext = slice

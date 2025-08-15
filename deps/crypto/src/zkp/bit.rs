@@ -200,20 +200,20 @@ pub fn benchmark_prove(iterations: u32) -> JsArray {
         let start_time = Instant::now();
         let r = CtxR::random_scalar();
         let gr = g_ristretto.exp(&r);
-        let hr = keypair_ristretto.pkey.exp(&r);
+        let hr = keypair_ristretto.pkey.y.exp(&r);
         let mhr = hr.mul(&message);
         let c = [gr, mhr];
 
-        let big_g = [g_ristretto, keypair_ristretto.pkey];
+        let big_g = [g_ristretto, keypair_ristretto.pkey.y];
         let s = CtxR::random_scalar();
         let s_2 = [s; 2];
         let c_pow_b = c.exp(&b_2);
         let g_pow_s = big_g.exp(&s_2);
         let c_prime = c_pow_b.mul(&g_pow_s);
 
-        let proof: BitProof<CtxR> = prove(&b, &r, &s, &c, &c_prime, &keypair_ristretto.pkey);
+        let proof: BitProof<CtxR> = prove(&b, &r, &s, &c, &c_prime, &keypair_ristretto.pkey.y);
         let duration = start_time.elapsed();
-        assert!(verify(&proof, &c, &c_prime, &keypair_ristretto.pkey));
+        assert!(verify(&proof, &c, &c_prime, &keypair_ristretto.pkey.y));
         total_duration_ristretto += duration.as_secs_f64() * 1000.0; // Convert to milliseconds
     }
     let avg_ristretto_time = total_duration_ristretto / iterations as f64;
@@ -237,20 +237,20 @@ pub fn benchmark_prove(iterations: u32) -> JsArray {
         let start_time = Instant::now();
         let r = CtxP::random_scalar();
         let gr = g_p256.exp(&r);
-        let hr = keypair_p256.pkey.exp(&r);
+        let hr = keypair_p256.pkey.y.exp(&r);
         let mhr = hr.mul(&message);
         let c = [gr, mhr];
 
-        let big_g = [g_p256, keypair_p256.pkey];
+        let big_g = [g_p256, keypair_p256.pkey.y];
         let s = CtxP::random_scalar();
         let s_2 = [s; 2];
         let c_pow_b = c.exp(&b_2);
         let g_pow_s = big_g.exp(&s_2);
         let c_prime = c_pow_b.mul(&g_pow_s);
 
-        let proof: BitProof<CtxP> = prove(&b, &r, &s, &c, &c_prime, &keypair_p256.pkey);
+        let proof: BitProof<CtxP> = prove(&b, &r, &s, &c, &c_prime, &keypair_p256.pkey.y);
         let duration = start_time.elapsed();
-        assert!(verify(&proof, &c, &c_prime, &keypair_p256.pkey));
+        assert!(verify(&proof, &c, &c_prime, &keypair_p256.pkey.y));
         total_duration_p256 += duration.as_secs_f64() * 1000.0; // Convert to milliseconds
     }
     let avg_p256_time = total_duration_p256 / iterations as f64;
@@ -299,24 +299,24 @@ mod tests {
 
             let r = Ctx::random_scalar();
             let gr = g.exp(&r);
-            let hr = keypair.pkey.exp(&r);
+            let hr = keypair.pkey.y.exp(&r);
             let mhr = hr.mul(&message);
             let c = [gr, mhr];
 
-            let big_g = [g.clone(), keypair.pkey.clone()];
+            let big_g = [g.clone(), keypair.pkey.y.clone()];
             let s = Ctx::random_scalar();
             // let s_2 = [s.clone(); 2];
             let c_pow_b = c.narrow_exp(&b);
             let g_pow_s = big_g.narrow_exp(&s);
             let c_prime = c_pow_b.mul(&g_pow_s);
 
-            let proof: BitProof<Ctx> = prove(&b, &r, &s, &c, &c_prime, &keypair.pkey);
+            let proof: BitProof<Ctx> = prove(&b, &r, &s, &c, &c_prime, &keypair.pkey.y);
             let proof_bytes = proof.ser_f();
             assert_eq!(proof_bytes.len(), BitProof::<Ctx>::size_bytes());
 
             let proof = BitProof::<Ctx>::deser_f(&proof_bytes).unwrap();
 
-            let ok = verify(&proof, &c, &c_prime, &keypair.pkey);
+            let ok = verify(&proof, &c, &c_prime, &keypair.pkey.y);
 
             assert!(ok);
         }

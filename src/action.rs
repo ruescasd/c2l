@@ -12,7 +12,7 @@ pub enum Act {
     CheckPk(ConfigHash, ContestIndex, PkHash, Hashes),
     Mix(ConfigHash, ContestIndex, BallotsHash, PkHash),
     CheckMix(ConfigHash, ContestIndex, TrusteeIndex, MixHash, BallotsHash, PkHash),
-    PartialDecrypt(ConfigHash, ContestIndex, BallotsHash, ShareHash),
+    PartialDecrypt(ConfigHash, ContestIndex, BallotsHash, Hashes),
     CombineDecryptions(ConfigHash, ContestIndex, Hashes, MixHash, Hashes),
     CheckPlaintexts(ConfigHash, ContestIndex, PlaintextsHash, Hashes, MixHash, Hashes)
 }

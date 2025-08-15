@@ -232,3 +232,20 @@ macro_rules! impl_fdeserializable_for_tuples {
 }
 
 impl_fdeserializable_for_tuples!();
+
+use crate::utils::serialization::VDeserializable;
+impl FSerializable for u32 {
+    fn size_bytes() -> usize {
+        4
+    }
+    fn ser_into(&self, buffer: &mut Vec<u8>) { 
+        let bytes = self.to_be_bytes();
+        buffer.extend_from_slice(&bytes);
+    }
+}
+
+impl FDeserializable for u32 {
+    fn deser_f(buffer: &[u8]) -> Result<Self, crate::utils::Error> {
+        Self::deser(buffer)
+    }
+}

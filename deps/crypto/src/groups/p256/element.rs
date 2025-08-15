@@ -8,7 +8,7 @@ use p256::elliptic_curve::subtle::CtOption;
 use p256::elliptic_curve::Group;
 use p256::{EncodedPoint, ProjectivePoint};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq)]
 pub struct P256Element(pub ProjectivePoint);
 
 impl P256Element {

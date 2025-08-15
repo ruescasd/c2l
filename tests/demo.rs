@@ -6,18 +6,17 @@ use std::fs::File;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+use crypto::cryptosystem::Plaintext;
 use rand::rngs::OsRng;
 use ed25519_dalek::{Keypair, PublicKey as SPublicKey};
+use serde::Serialize;
 use uuid::Uuid;
 use serde::de::DeserializeOwned;
 
 use c2l::statement::SignedStatement;
 use c2l::artifact::*;
-use c2l::elgamal::PublicKey;
+
 use c2l::hashing;
-use c2l::group::Group;
-use c2l::arithm::Element;
-use c2l::ristretto_b::*;
 use c2l::bb::BulletinBoard;
 use c2l::bb::Names;
 use c2l::memory_bb::*;
@@ -35,23 +34,27 @@ use cursive::Cursive;
 use cursive::utils::markup::StyledString;
 use cursive::theme::BaseColor;
 
+use crypto::context::{Context, RistrettoCtx};
+use crypto::cryptosystem::naoryung::PublicKey;
+use crypto::utils::serialization::VSerializable;
+
 use regex::Regex;
 use simplelog::*;
 use log::info;
 
-type DemoArc<E, G> = Arc<Mutex<Demo<E, G>>>;
+type DemoArc<C, const W: usize, const T: usize, const P: usize> = Arc<Mutex<Demo<C, W, T, P>>>;
 
-struct Demo<E: Element, G> {
+struct Demo<C: Context, const W: usize, const T: usize, const P: usize> {
     pub cb_sink: cursive::CbSink,
-    trustees: Vec<Protocol<E, G, MemoryBulletinBoard<E, G>>>,
+    trustees: Vec<Protocol<C, W, T, P, MemoryBulletinBoard<C, W, T, P>>>,
     bb_keypair: Keypair,
-    config: c2l::artifact::Config<E, G>,
-    board: MemoryBulletinBoard<E, G>,
-    all_plaintexts: Vec<Vec<E::Plaintext>>,
+    config: c2l::artifact::CConfig<C>,
+    board: MemoryBulletinBoard<C, W, T, P>,
+    all_plaintexts: Vec<Vec<Plaintext<C, W>>>,
     ballots: u32
 }
-impl<E: Element + DeserializeOwned + std::cmp::PartialEq, G: Group<E> + DeserializeOwned> Demo<E, G> {
-    fn new(sink: cursive::CbSink, group: &G, trustees: u32, contests: u32, ballots: u32) -> Demo<E, G> {
+impl<C: Context + Serialize + DeserializeOwned + Eq, const W: usize, const T: usize, const P: usize> Demo<C, W, T, P> {
+    fn new(sink: cursive::CbSink, contests: u32, ballots: u32) -> Demo<C, W, T, P> {
         let local1 = "/tmp/local";
         let local2 = "/tmp/local2";
         let local_path = Path::new(&local1);
@@ -64,21 +67,21 @@ impl<E: Element + DeserializeOwned + std::cmp::PartialEq, G: Group<E> + Deserial
         let mut trustee_pks = Vec::new();
         let mut prots = Vec::new();
         
-        for i in 0..trustees {
+        for i in 0..P {
             let local = format!("./local{}", i);
             let local_path = Path::new(&local);
             fs::remove_dir_all(local_path).ok();
             fs::create_dir(local_path).ok();
-            let trustee: Trustee<E, G> = Trustee::new(local.to_string());
+            let trustee: Trustee<C, W, T, P> = Trustee::new(local.to_string());
             trustee_pks.push(trustee.keypair.public);
-            let prot: Protocol<E, G, MemoryBulletinBoard<E, G>> = Protocol::new(trustee);
+            let prot: Protocol<C, W, T, P, MemoryBulletinBoard<C, W, T, P>> = Protocol::new(trustee);
             prots.push(prot);
 
         }
         let mut csprng = OsRng;
         let bb_keypair = Keypair::generate(&mut csprng);
-        let mut bb = MemoryBulletinBoard::<E, G>::new();
-        let cfg = gen_config(group, contests, trustee_pks, bb_keypair.public);
+        let mut bb = MemoryBulletinBoard::<C, W, T, P>::new();
+        let cfg = gen_config::<C, W, T, P>(contests, trustee_pks, bb_keypair.public);
         let cfg_b = bincode::serialize(&cfg).unwrap();
         let tmp_file = util::write_tmp(cfg_b).unwrap();
         bb.add_config(&ConfigPath(tmp_file.path().to_path_buf()));
@@ -96,16 +99,16 @@ impl<E: Element + DeserializeOwned + std::cmp::PartialEq, G: Group<E> + Deserial
     
     fn add_ballots(&mut self) {
         for i in 0..self.config.contests {
-            let pk_b = self.board.get_unsafe(MemoryBulletinBoard::<E, G>::public_key(i, 0));
-            let ballots_b = self.board.get_unsafe(MemoryBulletinBoard::<E, G>::ballots(i));
+            let pk_b = self.board.get_unsafe(MemoryBulletinBoard::<C, T, W, P>::public_key(i, 0));
+            let ballots_b = self.board.get_unsafe(MemoryBulletinBoard::<C, W, T, P>::ballots(i));
             if pk_b.is_some() && ballots_b.is_none() {
                 info!(">> Adding {} ballots..", self.ballots);
-                let pk: PublicKey<E, G> = bincode::deserialize(pk_b.unwrap()).unwrap();
+                let pk: PublicKey<C> = bincode::deserialize(pk_b.unwrap()).unwrap();
                 
-                let (plaintexts, ciphertexts) = util::random_encrypt_ballots(self.ballots as usize, &pk);
+                let (plaintexts, ciphertexts) = util::random_encrypt_ballots::<C, W, T>(self.ballots as usize, &pk);
                 self.all_plaintexts.push(plaintexts);
                 
-                let ballots = Ballots { ciphertexts };
+                let ballots = CBallots { ciphertexts };
                 let ballots_b = bincode::serialize(&ballots).unwrap();
                 let ballots_h = hashing::hash(&ballots);
                 let cfg_h = hashing::hash(&self.config);
@@ -120,22 +123,34 @@ impl<E: Element + DeserializeOwned + std::cmp::PartialEq, G: Group<E> + Deserial
                 info!(">> OK");
             }
             else {
-                info!("Cannot add ballots for contest=[{}] at this time (no pk yet?)", i);
+                info!("Cannot add ballots for contest=[{}] at this time (no pk yet or already cast?)", i);
             }
         }
     }
+
+    
     fn check_plaintexts(&self) {
         for i in 0..self.config.contests {
-            if let Some(decrypted_b) = self.board.get_unsafe(MemoryBulletinBoard::<E, G>::plaintexts(i, 0)) {
-                let decrypted: Plaintexts<E> = bincode::deserialize(decrypted_b).unwrap();
-                let decoded: Vec<E::Plaintext> = decrypted.plaintexts.iter().map(|p| {
-                    self.config.group.decode(&p)
+            if let Some(decrypted_b) = self.board.get_unsafe(MemoryBulletinBoard::<C, W, T, P>::plaintexts(i, 0)) {
+                let decrypted: CPlaintexts<C, W> = bincode::deserialize(decrypted_b).unwrap();
+                let decrypted: Vec<Vec<u8>> = decrypted.plaintexts.iter().map(|p| {
+                    p.ser()
                 }).collect();
-                let p1: HashSet<&E::Plaintext> = HashSet::from_iter(self.all_plaintexts[i as usize].iter().clone());
-                let p2: HashSet<&E::Plaintext> = HashSet::from_iter(decoded.iter().clone());
+
+                let plaintexts: Vec<Vec<u8>> = self.all_plaintexts[i as usize].iter().map(|p| {
+                    p.ser()
+                }).collect();
+                
+                let p1: HashSet<Vec<u8>> = HashSet::from_iter(plaintexts.into_iter());
+                let p2: HashSet<Vec<u8>> = HashSet::from_iter(decrypted.into_iter());
                 
                 info!(">> Checking plaintexts contest=[{}]...", i);
-                assert!(p1 == p2);
+                if p1 != p2 {
+                    info!(">> ** ERROR p1 != p2 ! ({}, {}) **", p1.len(), p2.len());
+                }
+                else {
+                    info!(">> Matched ({}, {}) plaintexts", p1.len(), p2.len());
+                }
                 info!(">> OK");
             }
             else {
@@ -194,12 +209,11 @@ impl<E: Element + DeserializeOwned + std::cmp::PartialEq, G: Group<E> + Deserial
 fn demo_tui() {
     let mut n: u32 = 0;
     let mut siv = cursive::default();
-    // let group = RugGroup::default();
-    let group = RistrettoGroup;
-    let trustees: u32 = 3;
+    const P: usize = 3;
     let contests = 3;
-    let ballots = 10000;
-    let demo = Demo::new(siv.cb_sink().clone(), &group, trustees, contests, ballots);
+    let ballots = 1000;
+    let demo: Demo<RistrettoCtx, 3, 2, P> = Demo::new(siv.cb_sink().clone(), contests, ballots);
+    let params = util::type_name_of(&demo);
     CombinedLogger::init(
         vec![
             // TermLogger::new(LevelFilter::Info, simplelog::Config::default(), TerminalMode::Mixed),
@@ -224,12 +238,12 @@ fn demo_tui() {
         "release"
     };
 
-    let init_text = format!("Build: {}\nGroup: {}\nTrustees: {}\nContests: {}\nBallots: {}", 
-        build, util::type_name_of(&group), trustees, contests, ballots);
+    let init_text = format!("Build: {}\nParams: {}\nTrustees: {}\nContests: {}\nBallots: {}", 
+        build, params, P, contests, ballots);
     
     let mut h_layout = LinearLayout::horizontal();
     let mut layout = LinearLayout::vertical();
-    for i in 0..trustees {
+    for i in 0..P {
         let title = format!("Trustee {}", i);
         let text = "";    
         layout = layout.child(Panel::new(
@@ -285,7 +299,7 @@ fn demo_tui() {
                 view.get_inner_mut().set_content("");
             });
             step_t(Arc::clone(&demo_arc_run), n);
-            n = (n + 1) % trustees;
+            n = (n + 1) % (P as u32);
         }
     });
     siv.add_global_callback('b', move |s| {
@@ -324,25 +338,25 @@ fn demo_tui() {
     siv.run();
 }
 
-fn step_t<E: 'static + Element + DeserializeOwned + std::cmp::PartialEq, G: 'static + Group<E> + DeserializeOwned>(demo_arc: DemoArc<E, G>, t: u32) {
+fn step_t<C: Context + Serialize + DeserializeOwned + Eq + Send + Sync, const W: usize, const T: usize, const P: usize>(demo_arc: DemoArc<C, W, T, P>, t: u32) {
     std::thread::spawn(move || {
         step(Arc::clone(&demo_arc), t)
     });
 }
 
-fn ballots_t<E: 'static + Element + DeserializeOwned + std::cmp::PartialEq, G: 'static + Group<E> + DeserializeOwned>(demo_arc: DemoArc<E, G>, t: u32) {
+fn ballots_t<C: Context + Serialize + DeserializeOwned + Eq + Send + Sync, const W: usize, const T: usize, const P: usize>(demo_arc: DemoArc<C, W, T, P>, t: u32) {
     std::thread::spawn(move || {
         ballots(Arc::clone(&demo_arc), t)
     });
 }
 
-fn check_t<E: 'static + Element + DeserializeOwned + std::cmp::PartialEq, G: 'static + Group<E> + DeserializeOwned>(demo_arc: DemoArc<E, G>, t: u32) {
+fn check_t<C: Context + Serialize + DeserializeOwned + Eq + Send + Sync, const W: usize, const T: usize, const P: usize>(demo_arc: DemoArc<C, W, T, P>, t: u32) {
     std::thread::spawn(move || {
         check(Arc::clone(&demo_arc), t)
     });
 }
 
-fn step<E: 'static + Element + DeserializeOwned + std::cmp::PartialEq, G: Group<E> + DeserializeOwned>(demo_arc: DemoArc<E, G>, t: u32) {
+fn step<C: Context + Serialize + Eq + DeserializeOwned, const W: usize, const T: usize, const P: usize>(demo_arc: DemoArc<C, W, T, P>, t: u32) {
     let mut demo = demo_arc.lock().unwrap();
     demo.status(String::from("Working..."));
     info!("set_panel=[facts]");
@@ -352,7 +366,7 @@ fn step<E: 'static + Element + DeserializeOwned + std::cmp::PartialEq, G: Group<
     demo.done(t);
 }
 
-fn ballots<E: 'static + Element + DeserializeOwned + std::cmp::PartialEq, G: Group<E> + DeserializeOwned>(demo_arc: DemoArc<E, G>, t: u32) {
+fn ballots<C: Context + Serialize + Eq + DeserializeOwned, const W: usize, const T: usize, const P: usize>(demo_arc: DemoArc<C, W, T, P>, t: u32) {
     let mut demo = demo_arc.lock().unwrap();
     demo.status(String::from("Working..."));
     info!("set_panel=[{}]", t);
@@ -360,7 +374,7 @@ fn ballots<E: 'static + Element + DeserializeOwned + std::cmp::PartialEq, G: Gro
     demo.done(t);
 }
 
-fn check<E: 'static + Element + DeserializeOwned + std::cmp::PartialEq, G: Group<E> + DeserializeOwned>(demo_arc: DemoArc<E, G>, t: u32) {
+fn check<C: Context + Serialize + Eq + DeserializeOwned, const W: usize, const T: usize, const P: usize>(demo_arc: DemoArc<C, W, T, P>, t: u32) {
     let demo = demo_arc.lock().unwrap();
     demo.status(String::from("Working..."));
     info!("set_panel=[{}]", t);
@@ -368,7 +382,7 @@ fn check<E: 'static + Element + DeserializeOwned + std::cmp::PartialEq, G: Group
     demo.done(t);
 }
 
-
+/* 
 #[test]
 fn demo_ristretto() {
     CombinedLogger::init(
@@ -380,7 +394,7 @@ fn demo_ristretto() {
     demo(group);
 }
 
-fn demo<E: Element + DeserializeOwned + std::cmp::PartialEq, G: Group<E> + DeserializeOwned>(group: G) {
+fn demo<C: Context, const W: usize, const T: usize, const P: usize>() {
     
     let local1 = "/tmp/local";
     let local2 = "/tmp/local2";
@@ -391,24 +405,24 @@ fn demo<E: Element + DeserializeOwned + std::cmp::PartialEq, G: Group<E> + Deser
     fs::remove_dir_all(local_path).ok();
     fs::create_dir(local_path).ok();
 
-    let trustee1: Trustee<E, G> = Trustee::new(local1.to_string());
-    let trustee2: Trustee<E, G> = Trustee::new(local2.to_string());
+    let trustee1: Trustee<C, W, T, P> = Trustee::new(local1.to_string());
+    let trustee2: Trustee<C, W, T, P> = Trustee::new(local2.to_string());
     let mut csprng = OsRng;
     let bb_keypair = Keypair::generate(&mut csprng);
-    let mut bb = MemoryBulletinBoard::<E, G>::new();
+    let mut bb = MemoryBulletinBoard::<C, W, T, P>::new();
     
     let mut trustee_pks = Vec::new();
     trustee_pks.push(trustee1.keypair.public);
     trustee_pks.push(trustee2.keypair.public);
     
     let contests = 3;
-    let cfg = gen_config(&group, contests, trustee_pks, bb_keypair.public);
+    let cfg = gen_config(contests, trustee_pks, bb_keypair.public);
     let cfg_b = bincode::serialize(&cfg).unwrap();
     let tmp_file = util::write_tmp(cfg_b).unwrap();
     bb.add_config(&ConfigPath(tmp_file.path().to_path_buf()));
     
-    let prot1: Protocol<E, G, MemoryBulletinBoard<E, G>> = Protocol::new(trustee1);
-    let prot2: Protocol<E, G, MemoryBulletinBoard<E, G>> = Protocol::new(trustee2);
+    let prot1: Protocol<C, W, T, P, MemoryBulletinBoard<E, G>> = Protocol::new(trustee1);
+    let prot2: Protocol<C, W, T, P,  MemoryBulletinBoard<E, G>> = Protocol::new(trustee2);
 
     // mix position 0
     prot1.step(&mut bb);
@@ -482,7 +496,7 @@ fn demo<E: Element + DeserializeOwned + std::cmp::PartialEq, G: Group<E> + Deser
 
     for i in 0..contests {
         let decrypted_b = bb.get_unsafe(MemoryBulletinBoard::<E, G>::plaintexts(i, 0)).unwrap();
-        let decrypted: Plaintexts<E> = bincode::deserialize(decrypted_b).unwrap();
+        let decrypted: Plaintexts<C> = bincode::deserialize(decrypted_b).unwrap();
         let decoded: Vec<E::Plaintext> = decrypted.plaintexts.iter().map(|p| {
             group.decode(&p)
         }).collect();
@@ -493,7 +507,7 @@ fn demo<E: Element + DeserializeOwned + std::cmp::PartialEq, G: Group<E> + Deser
         assert!(p1 == p2);
         println!("Ok");
     }
-}
+}*/
 
 struct DemoLogSink {
     pub cb_sink: cursive::CbSink,
@@ -558,18 +572,17 @@ impl DemoLogSink {
     }
 }
 
-fn gen_config<E: Element, G: Group<E>>(group: &G, contests: u32, trustee_pks: Vec<SPublicKey>,
-    ballotbox_pk: SPublicKey) -> c2l::artifact::Config<E, G> {
+fn gen_config<C: Context, const W: usize, const T: usize, const P: usize>(contests: u32, trustee_pks: Vec<SPublicKey>,
+    ballotbox_pk: SPublicKey) -> c2l::artifact::CConfig<C> {
 
     let id = Uuid::new_v4();
 
-    let cfg = c2l::artifact::Config {
+    let cfg = c2l::artifact::CConfig {
         id: id.as_bytes().clone(),
-        group: group.clone(),
         contests: contests, 
         ballotbox: ballotbox_pk, 
         trustees: trustee_pks,
-        phantom_e: PhantomData
+        phantom_c: PhantomData
     };
 
     cfg

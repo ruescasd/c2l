@@ -205,7 +205,6 @@ dependencies = [
  "criterion",
  "crypto",
  "cursive",
- "curve25519-dalek 3.2.0",
  "ed25519-dalek 1.0.1",
  "generic-array",
  "git2",
@@ -526,7 +525,6 @@ dependencies = [
  "byteorder",
  "digest 0.9.0",
  "rand_core 0.5.1",
- "serde",
  "subtle",
  "zeroize",
 ]

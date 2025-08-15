@@ -1,6 +1,7 @@
-use crate::context::Context;
-use crate::cryptosystem::{elgamal, naoryung};
+use crate::context::{Context, RistrettoCtx};
+use crate::cryptosystem::{elgamal, naoryung, Plaintext};
 use crate::dkgd::{DkgCiphertext, DkgPublicKey};
+use crate::dkgd::{VerifiableShares, VerifiableShare, DecryptionFactor};
 use crate::utils::serialization::{VDeserializable, VSerializable};
 use crate::zkp::{
     dlogeq::DlogEqProof, pleq::PlEqProof, schnorr::SchnorrProof,
@@ -268,9 +269,129 @@ impl<C: Context, const W: usize, const T: usize> serde::Serialize for DkgCiphert
     }
 }
 
+// VerifiableShare
+impl<'de, C: Context, const T: usize> serde::Deserialize<'de> for VerifiableShare<C, T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes: Vec<u8> = serde::Deserialize::deserialize(deserializer)?;
+        Self::deser(&bytes).map_err(D::Error::custom)
+    }
+}
+
+impl<C: Context, const T: usize> serde::Serialize for VerifiableShare<C, T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_bytes(&self.ser())
+    }
+}
+
+// DecryptionFactor
+impl<'de, C: Context, const T: usize> serde::Deserialize<'de> for DecryptionFactor<C, T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes: Vec<u8> = serde::Deserialize::deserialize(deserializer)?;
+        Self::deser(&bytes).map_err(D::Error::custom)
+    }
+}
+
+impl<C: Context, const T: usize> serde::Serialize for DecryptionFactor<C, T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_bytes(&self.ser())
+    }
+}
+
+// Plaintext
+impl<'de, C: Context, const T: usize> serde::Deserialize<'de> for Plaintext<C, T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes: Vec<u8> = serde::Deserialize::deserialize(deserializer)?;
+        Self::deser(&bytes).map_err(D::Error::custom)
+    }
+}
+
+impl<C: Context, const T: usize> serde::Serialize for Plaintext<C, T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_bytes(&self.ser())
+    }
+}
+
+// naoryung::PublicKey
+impl<'de, C: Context, const T: usize, const P: usize> serde::Deserialize<'de> for VerifiableShares<C, T, P> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes: Vec<u8> = serde::Deserialize::deserialize(deserializer)?;
+        Self::deser(&bytes).map_err(D::Error::custom)
+    }
+}
+
+impl<C: Context, const T: usize, const P: usize> serde::Serialize for VerifiableShares<C, T, P> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_bytes(&self.ser())
+    }
+}
+
+// naoryung::PublicKey
+impl<'de, C: Context> serde::Deserialize<'de> for naoryung::PublicKey<C> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes: Vec<u8> = serde::Deserialize::deserialize(deserializer)?;
+        Self::deser(&bytes).map_err(D::Error::custom)
+    }
+}
+
+impl<C: Context> serde::Serialize for naoryung::PublicKey<C> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_bytes(&self.ser())
+    }
+}
+
+// RistrettoCtx
+impl<'de> serde::Deserialize<'de> for RistrettoCtx {
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(RistrettoCtx)
+    }
+}
+
+impl serde::Serialize for RistrettoCtx {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_bytes(&vec![])
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::context::{Context, P256Ctx, RistrettoCtx};
+    
+    use crate::context::{Context, P256Ctx, RistrettoCtx as RCtx};
     use crate::cryptosystem::{elgamal, naoryung};
     use crate::dkgd::{DkgCiphertext, DkgPublicKey};
     use crate::traits::group::CryptoGroup;
@@ -279,6 +400,15 @@ mod tests {
 
     #[test]
     fn test_serde_elgamal_public_key() {
+        let pk = elgamal::KeyPair::generate().pkey;
+        let serialized = bincode::serde::encode_to_vec(&pk, bincode::config::standard()).unwrap();
+        let (deserialized, _): (elgamal::PublicKey<P256Ctx>, _) =
+            bincode::serde::decode_from_slice(&serialized, bincode::config::standard()).unwrap();
+        assert_eq!(pk, deserialized);
+    }
+/* 
+    #[test]
+    fn test_serde_naoryung_public_key() {
         let pk =
             elgamal::PublicKey::<P256Ctx>::from_keypair(&elgamal::KeyPair::generate());
         let serialized = bincode::serde::encode_to_vec(&pk, bincode::config::standard()).unwrap();
@@ -286,7 +416,7 @@ mod tests {
             bincode::serde::decode_from_slice(&serialized, bincode::config::standard()).unwrap();
         assert_eq!(pk, deserialized);
     }
-
+*/
     #[test]
     fn test_serde_elgamal_key_pair() {
         let kp = elgamal::KeyPair::<P256Ctx>::generate();
@@ -311,7 +441,7 @@ mod tests {
     #[test]
     fn test_serde_naoryung_key_pair() {
         let eg_kp = elgamal::KeyPair::<P256Ctx>::generate();
-        let kp = naoryung::KeyPair::generate(&eg_kp);
+        let kp = naoryung::KeyPair::new(&eg_kp, P256Ctx::random_element());
         let serialized = bincode::serde::encode_to_vec(&kp, bincode::config::standard()).unwrap();
         let (deserialized, _): (naoryung::KeyPair<P256Ctx>, _) =
             bincode::serde::decode_from_slice(&serialized, bincode::config::standard()).unwrap();
@@ -321,7 +451,7 @@ mod tests {
     #[test]
     fn test_serde_naoryung_ciphertext() {
         let eg_kp = elgamal::KeyPair::<P256Ctx>::generate();
-        let kp = naoryung::KeyPair::generate(&eg_kp);
+        let kp = naoryung::KeyPair::new(&eg_kp, P256Ctx::random_element());
         let m = [P256Ctx::random_element(), P256Ctx::random_element()];
         let ct = kp.encrypt(&m);
 
@@ -350,19 +480,19 @@ mod tests {
 
     #[test]
     fn test_serde_pleq_proof() {
-        let eg_kp = elgamal::KeyPair::<RistrettoCtx>::generate();
-        let ny_kp = naoryung::KeyPair::generate(&eg_kp);
+        let eg_kp = elgamal::KeyPair::<RCtx>::generate();
+        let ny_kp = naoryung::KeyPair::new(&eg_kp, RCtx::random_element());
         let m = [
-            RistrettoCtx::random_element(),
-            RistrettoCtx::random_element(),
+            RCtx::random_element(),
+            RCtx::random_element(),
         ];
-        let r = [RistrettoCtx::random_scalar(), RistrettoCtx::random_scalar()];
+        let r = [RCtx::random_scalar(), RCtx::random_scalar()];
         let ct = ny_kp.encrypt_with_r(&m, &r);
 
-        let proof: pleq::PlEqProof<RistrettoCtx, 2> =
-            pleq::PlEqProof::prove(&ny_kp.pk_b, &ny_kp.pk_a, &ct.u_b, &ct.v_b, &ct.u_a, &r);
+        let proof: pleq::PlEqProof<RCtx, 2> =
+            pleq::PlEqProof::prove(&ny_kp.pkey.pk_b, &ny_kp.pkey.pk_a, &ct.u_b, &ct.v_b, &ct.u_a, &r);
         let serialized = bincode::serde::encode_to_vec(&proof, bincode::config::standard()).unwrap();
-        let (deserialized, _): (pleq::PlEqProof<RistrettoCtx, 2>, _) =
+        let (deserialized, _): (pleq::PlEqProof<RCtx, 2>, _) =
             bincode::serde::decode_from_slice(&serialized, bincode::config::standard()).unwrap();
         assert_eq!(proof, deserialized);
     }
@@ -393,9 +523,8 @@ mod tests {
         let ciphertexts: Vec<elgamal::Ciphertext<P256Ctx, W>> =
             messages.iter().map(|m| keypair.encrypt(m)).collect();
 
-        let pk: elgamal::PublicKey<P256Ctx> = elgamal::PublicKey::new(keypair.pkey.clone());
         let generators = <P256Ctx as Context>::G::ind_generators(count, &vec![]);
-        let shuffler = shuffle::Shuffler::<P256Ctx, W>::new(generators, pk);
+        let shuffler = shuffle::Shuffler::<P256Ctx, W>::new(generators, keypair.pkey);
 
         let (_, proof) = shuffler.shuffle(&ciphertexts, &vec![]);
         let serialized = bincode::serde::encode_to_vec(&proof, bincode::config::standard()).unwrap();

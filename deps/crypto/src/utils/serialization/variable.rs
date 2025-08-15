@@ -177,6 +177,22 @@ impl VDeserializable for String {
     }
 }
 
+impl VSerializable for u32 {
+    fn ser(&self) -> Vec<u8> {
+        self.to_be_bytes().to_vec()
+    }
+}
+
+impl VDeserializable for u32 {
+    fn deser(buffer: &[u8]) -> Result<u32, crate::utils::Error> {
+        let bytes: [u8; 4] = buffer.try_into()?;
+        
+        let value = u32::from_be_bytes(bytes);
+
+        Ok(value)
+    }
+}
+
 #[crate::warning("Remove this, only temporary for strand challenge input to work")]
 impl VSerializable for u8 {
     fn ser(&self) -> Vec<u8> {

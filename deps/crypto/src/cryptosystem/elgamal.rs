@@ -7,10 +7,11 @@ use vser_derive::VSerializable;
 #[derive(Debug, PartialEq, VSerializable)]
 pub struct KeyPair<C: Context> {
     pub skey: C::Scalar,
-    pub pkey: C::Element,
+    pub pkey: PublicKey<C>,
 }
 impl<C: Context> KeyPair<C> {
-    pub fn new(skey: <C as Context>::Scalar, pkey: <C as Context>::Element) -> KeyPair<C> {
+    pub fn new(skey: C::Scalar, pkey: C::Element) -> KeyPair<C> {
+        let pkey = PublicKey::new(pkey);
         KeyPair { skey, pkey }
     }
 }
@@ -19,30 +20,20 @@ impl<C: Context> KeyPair<C> {
     pub fn generate() -> Self {
         let skey = C::random_scalar();
         let pkey = C::generator().exp(&skey);
+        let pkey = PublicKey::new(pkey);
         KeyPair { skey, pkey }
     }
-
-    #[crate::warning("Duplicated in PublicKey impl")]
+    
     pub fn encrypt_with_r<const W: usize>(
         &self,
-        msg: &[C::Element; W],
+        message: &[C::Element; W],
         r: &[C::Scalar; W],
     ) -> Ciphertext<C, W> {
-        let g = C::generator();
-
-        let u = g.widen_exp(r);
-        let v = self.pkey.widen_exp(r);
-        let v = msg.mul(&v);
-
-        Ciphertext([u, v])
+        self.pkey.encrypt_with_r(message, r)
     }
 
-    #[crate::warning("Duplicated in PublicKey impl")]
-    pub fn encrypt<const W: usize>(&self, msg: &[C::Element; W]) -> Ciphertext<C, W> {
-        let mut rng = C::get_rng();
-        let r = <[C::Scalar; W]>::random(&mut rng);
-
-        self.encrypt_with_r(msg, &r)
+    pub fn encrypt<const W: usize>(&self, message: &[C::Element; W]) -> Ciphertext<C, W> {
+        self.pkey.encrypt(message)
     }
 
     pub fn decrypt<const W: usize>(&self, message: &Ciphertext<C, W>) -> [C::Element; W] {
@@ -100,18 +91,13 @@ impl<C: Context, const W: usize> Ciphertext<C, W> {
     }
 }
 
-#[derive(Debug, PartialEq, VSerializable)]
+#[derive(Debug, PartialEq, VSerializable, Clone)]
 pub struct PublicKey<C: Context> {
     pub y: C::Element,
 }
 impl<C: Context> PublicKey<C> {
     pub fn new(y: C::Element) -> Self {
         Self { y }
-    }
-    pub fn from_keypair(keypair: &KeyPair<C>) -> Self {
-        Self {
-            y: keypair.pkey.clone(),
-        }
     }
     pub fn encrypt<const W: usize>(&self, message: &[C::Element; W]) -> Ciphertext<C, W> {
         let mut rng = C::get_rng();
