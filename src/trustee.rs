@@ -87,7 +87,7 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Tru
                     let _cfg = board.get_config(cfg_h).unwrap();
                     let hashes = util::clear_zeroes(&hs);
                     assert!(hashes.len() as u32 == trustees.unwrap());
-                    let pk = self.get_pk(board, hashes, cnt).unwrap();
+                    let pk = self.get_pk(board, hashes, cnt, self_index.unwrap()).unwrap();
                     let pk_h = hashing::hash(&pk);
                     let ss = SignedStatement::public_key(&cfg_h, &pk_h, cnt, &self.keypair);
                     
@@ -100,7 +100,7 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Tru
                     let _cfg = board.get_config(cfg_h).unwrap();
                     let hashes = util::clear_zeroes(&hs);
                     info!(">> Action: get pk.. (contest=[{}], self=[{}])..", cnt, self_index.unwrap());
-                    let pk = self.get_pk(board, hashes, cnt).unwrap();
+                    let pk = self.get_pk(board, hashes, cnt, self_index.unwrap()).unwrap();
                     let pk_h_ = hashing::hash(&pk);
                     assert!(pk_h == pk_h_);
                     let ss = SignedStatement::public_key(&cfg_h, &pk_h, cnt, &self.keypair);
@@ -206,7 +206,7 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Tru
                     let now_ = std::time::Instant::now();
                     let d_hs = util::clear_zeroes(&decryption_hs);
                     let s_hs = util::clear_zeroes(&share_hs);
-                    let pls = self.get_plaintexts(board, cnt, d_hs, mix_h, s_hs, &cfg).unwrap();
+                    let pls = self.get_plaintexts(board, cnt, d_hs, mix_h, s_hs, &cfg, self_index.unwrap()).unwrap();
                     let rate = pls.plaintexts.len() as f32 / now_.elapsed().as_millis() as f32;
                     
                     let p_h = hashing::hash(&pls);
@@ -222,7 +222,7 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Tru
                     let now_ = std::time::Instant::now();
                     let s_hs = util::clear_zeroes(&share_hs);
                     let d_hs = util::clear_zeroes(&decryption_hs);
-                    let pls = self.get_plaintexts(board, cnt, d_hs, mix_h, s_hs, &cfg).unwrap();
+                    let pls = self.get_plaintexts(board, cnt, d_hs, mix_h, s_hs, &cfg, self_index.unwrap()).unwrap();
                     let rate = pls.plaintexts.len() as f32 / now_.elapsed().as_millis() as f32;
                     let pls_board = board.get_plaintexts(cnt, plaintexts_h).unwrap();
                     assert!(pls.plaintexts == pls_board.plaintexts);
@@ -267,7 +267,7 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Tru
     }
 
     fn get_plaintexts<B: BulletinBoard<C, W, T, P>>(&self, board: &B, cnt: u32, hs: Vec<Hash>, 
-        mix_h: Hash, share_hs: Vec<Hash>, cfg: &CConfig<C>) -> Option<CPlaintexts<C, W>> {
+        mix_h: Hash, share_hs: Vec<Hash>, cfg: &CConfig<C>, self_index: u32) -> Option<CPlaintexts<C, W>> {
         
         assert!(hs.len() == share_hs.len());
         
@@ -275,6 +275,7 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Tru
         let mix = board.get_mix(cnt, last_trustee as u32, mix_h).unwrap();
         let shares = board.get_shares(cnt, share_hs).unwrap();
         
+        // this is not necessary, verification keys should be part of the pk
         let recipients: [Recipient<C, T, P>; P] = array::from_fn(move |i| {
             
             let position = (i + 1) as u32;
@@ -286,13 +287,12 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Tru
             
             Recipient::new(position, verifiable_shares)
         });
-        info!(">> Verified {} shares..", recipients.len());
 
         let verification_keys: [C::Element; T] =
             array::from_fn(|i| recipients[i].verification_key.clone());
 
         let dfs = array::from_fn(|i| {
-            info!(">> Trustee {} retrieving share..", i);
+            info!(">> Retrieving decryptions for trustee {}..", i);
             let df = board.get_decryption(cnt, i as u32, hs[i]).unwrap();
             df.pd_ballots
         });
@@ -308,10 +308,10 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Tru
         Some(ret)
     }
 
-    fn get_pk<B: BulletinBoard<C, W, T, P>>(&self, board: &B, hs: Vec<Hash>, cnt: u32) -> Option<PublicKey<C>> {
+    fn get_pk<B: BulletinBoard<C, W, T, P>>(&self, board: &B, hs: Vec<Hash>, cnt: u32, self_index: u32) -> Option<PublicKey<C>> {
         
         let shares = board.get_shares(cnt, hs).unwrap();
-        let recipients: [Recipient<C, T, P>; P] = array::from_fn(|i| {
+        /* let recipients: [Recipient<C, T, P>; P] = array::from_fn(|i| {
             
             let position = (i + 1) as u32;
             let position = ParticipantPosition::new(position);
@@ -321,8 +321,18 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Tru
             });
             
             Recipient::new(position, verifiable_shares)
+        });*/
+
+        let position = self_index + 1;
+        let position = ParticipantPosition::new(position);
+            
+        let verifiable_shares: [VerifiableShare<C, T>; P] = shares.clone().map(|v| {
+            v.shares.for_participant(&position)
         });
-        let pk = recipients[0].joint_pk.0.clone();
+            
+        let recipient = Recipient::new(position, verifiable_shares);
+
+        let pk = recipient.joint_pk.0.clone();
         
 
         // this would be derived from hashing public data
