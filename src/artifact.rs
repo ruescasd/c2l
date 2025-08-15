@@ -6,41 +6,46 @@ use serde::{Deserialize, Serialize};
 use crypto::cryptosystem::naoryung::{Ciphertext as NYCiphertext};
 use crypto::cryptosystem::Plaintext;
 use crypto::zkp::shuffle::ShuffleProof as CShuffleProof;
-use crypto::context::Context;
 use crypto::cryptosystem::elgamal::Ciphertext;
+use crate::Application;
 
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
-pub struct CConfig<C: Context> {
+pub struct Config<A: Application> {
     pub id: [u8; 16],
     pub contests: u32, 
     pub ballotbox: SPublicKey, 
     pub trustees: Vec<SPublicKey>,
-    pub phantom_c: PhantomData<C>
+    pub phantom_a: PhantomData<A>
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct CKeyshares<C: Context, const T: usize, const P: usize> {
-    pub shares: VerifiableShares<C, T, P>,
+pub struct Keyshares<A: Application> {
+    pub shares: VerifiableShares<A::Context, {A::T}, {A::P}>,
+    pub phantom_a: PhantomData<A>,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct CBallots<C: Context, const W: usize> {
-    pub ciphertexts: Vec<NYCiphertext<C, W>>
+pub struct Ballots<A: Application> {
+    pub ciphertexts: Vec<NYCiphertext<A::Context, {A::W}>>,
+    pub phantom_a: PhantomData<A>,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct CMix<C: Context, const W: usize, const T: usize> {
-    pub mixed_ballots: Vec<Ciphertext<C, W>>,
-    pub proof: CShuffleProof<C, W>,
+pub struct Mix<A: Application> {
+    pub mixed_ballots: Vec<Ciphertext<A::Context, {A::W}>>,
+    pub proof: CShuffleProof<A::Context, {A::W}>,
+    pub phantom_a: PhantomData<A>,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct CPartialDecryption<C: Context, const W: usize> {
-    pub pd_ballots: Vec<DecryptionFactor<C, W>>,
+pub struct PartialDecryption<A: Application> {
+    pub pd_ballots: Vec<DecryptionFactor<A::Context, {A::W}>>,
+    pub phantom_a: PhantomData<A>,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct CPlaintexts<C: Context, const W: usize> {
-    pub plaintexts: Vec<Plaintext<C, W>>
+pub struct Plaintexts<A: Application> {
+    pub plaintexts: Vec<Plaintext<A::Context, {A::W}>>,
+    pub phantom_a: PhantomData<A>,
 }

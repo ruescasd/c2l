@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#![feature(generic_const_exprs)]
 
 
 pub mod util;
@@ -13,10 +14,11 @@ pub mod action;
 pub mod memory_bb;
 pub mod trustee;
 
+use serde::Serialize;
 pub use crypto::context::Context;
 
-trait Application {
-    type Context: Context;
+pub trait Application {
+    type Context: Context + Serialize;
     const W: usize;
     const T: usize;
     const P: usize;

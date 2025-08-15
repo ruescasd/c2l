@@ -1,5 +1,5 @@
-
 use std::array;
+use std::marker::PhantomData;
 
 use crypto::cryptosystem::elgamal;
 use crypto::cryptosystem::Plaintext;
@@ -12,6 +12,7 @@ use crypto::dkgd::ParticipantPosition;
 use crypto::dkgd::Recipient;
 use crypto::traits::CryptoGroup;
 use crypto::dkgd::VerifiableShare;
+use crypto::context::Context;
 use crypto::zkp::shuffle::Shuffler;
 
 use rand::rngs::OsRng;
@@ -19,8 +20,7 @@ use ed25519_dalek::Keypair;
 use log::info;
 
 use crate::hashing;
-use crate::hashing::*;
-use crate::artifact::*;
+use crate::artifact::{Config, Keyshares, Ballots, Mix, PartialDecryption, Plaintexts};
 use crate::statement::*;
 use crate::bb::*;
 use crate::util;
@@ -28,32 +28,27 @@ use crate::action::Act;
 use crate::util::short;
 use crate::localstore::LocalStore;
 use crate::protocol::*;
-use serde::Serialize;
+use crate::Application;
 
-use crypto::context::Context;
-
-pub struct Trustee<C: Context, const W: usize, const T: usize, const P: usize> {
+pub struct Trustee<A: Application> {
     pub keypair: Keypair,
-    pub localstore: LocalStore<C, W, T, P>,
-    // pub symmetric: GenericArray<u8, U32>
+    pub localstore: LocalStore<A>,
 }
 
-impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Trustee<C, W, T, P> {
+impl<A: Application> Trustee<A> {
     
-    pub fn new(local_store: String) -> Trustee<C, W, T, P> {
+    pub fn new(local_store: String) -> Trustee<A> {
         let mut csprng = OsRng;
         let localstore = LocalStore::new(local_store);
         let keypair = Keypair::generate(&mut csprng);
-        // let symmetric = symmetric::gen_key();
 
         Trustee {
             keypair,
             localstore,
-            // symmetric
         }
     }
     
-    pub fn run<B: BulletinBoard<C, W, T, P>>(&self, facts: Facts, board: &mut B) -> u32 {
+    pub fn run<B: BulletinBoard<A>>(&self, facts: Facts, board: &mut B) -> u32 where [(); A::W]:, [(); A::T]:, [(); A::P]: {
         let self_index = facts.get_self_index();
         let trustees = facts.get_trustee_count();
         let actions = facts.all_actions;
@@ -65,7 +60,6 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Tru
             match action {
                 Act::CheckConfig(cfg) => {
                     info!(">> Action: checking config..");
-                    // FIXME validate the config somehow
                     let ss = SignedStatement::config(&cfg, &self.keypair);
                     let stmt_path = self.localstore.set_config_stmt(&action, &ss);
                     board.add_config_stmt(&stmt_path, self_index.unwrap());
@@ -105,7 +99,6 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Tru
                     assert!(pk_h == pk_h_);
                     let ss = SignedStatement::public_key(&cfg_h, &pk_h, cnt, &self.keypair);
                     
-
                     let pk_stmt_path = self.localstore.set_pk_stmt(&action, &ss);
                     board.set_pk_stmt(&pk_stmt_path, cnt, self_index.unwrap());
                     info!(">> OK");
@@ -117,7 +110,7 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Tru
                     let pk = board.get_pk(cnt, pk_h).unwrap();
                     let ciphertexts = self.get_mix_src(board, cnt, self_t, ballots_h, &pk);
                     
-                    let h_generators = C::G::ind_generators(ciphertexts.len(), &vec![]);
+                    let h_generators = <<A as Application>::Context as Context>::G::ind_generators(ciphertexts.len(), &vec![]);
                     let pk = elgamal::PublicKey::new(pk.pk_b);
                     let shuffler = Shuffler::new(h_generators, pk);
                     
@@ -127,9 +120,10 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Tru
                     let rate = ciphertexts.len() as f32 / now_.elapsed().as_millis() as f32;
                     info!("Shuffle + Proof ({:.1} ciphertexts/s)", 1000.0 * rate);
                     
-                    let mix = CMix {
+                    let mix = Mix {
                         mixed_ballots: e_primes,
-                        proof: proof
+                        proof: proof,
+                        phantom_a: PhantomData,
                     };
                     let mix_h = hashing::hash(&mix);
                     
@@ -147,11 +141,10 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Tru
                     let _cfg = board.get_config(cfg_h).unwrap();
                     info!(">> Action:: Verifying mix (contest=[{}], self=[{}])..", cnt, self_index.unwrap());
                     let mix = board.get_mix(cnt, trustee, mix_h).unwrap();
-                    let pk: PublicKey<C> = board.get_pk(cnt, pk_h).unwrap();
+                    let pk: PublicKey<A::Context> = board.get_pk(cnt, pk_h).unwrap();
                     let ciphertexts = self.get_mix_src(board, cnt, trustee, ballots_h, &pk);
                     
-                    
-                    let h_generators = C::G::ind_generators(ciphertexts.len(), &vec![]);
+                    let h_generators = <<A as Application>::Context as Context>::G::ind_generators(ciphertexts.len(), &vec![]);
                     let pk = elgamal::PublicKey::new(pk.pk_b);
                     let shuffler = Shuffler::new(h_generators, pk);
                     let proof = mix.proof;
@@ -176,20 +169,21 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Tru
                     let shares = board.get_shares(cnt, shares_hs).unwrap();
                     
                     let participant = ParticipantPosition::new(self_index.unwrap() + 1);
-                    let verifiable_shares: [VerifiableShare<C, T>; P] = shares.map(|v| {
+                    let verifiable_shares: [VerifiableShare<A::Context, {A::T}>; {A::P}] = shares.map(|v| {
                         v.shares.for_participant(&participant)
                     });
 
                     let recipient = Recipient::new(participant, verifiable_shares);
                     let now_ = std::time::Instant::now();
                     
-                    let ciphertexts: Vec<DkgCiphertext<C, W, T>> = mix.mixed_ballots.iter()
+                    let ciphertexts: Vec<DkgCiphertext<A::Context, {A::W}, {A::T}>> = mix.mixed_ballots.iter()
                         .map(|c| DkgCiphertext(c.clone())).collect();
                     let dfs = recipient.decryption_factor(&ciphertexts, &vec![]);
 
                     let rate = mix.mixed_ballots.len() as f32 / now_.elapsed().as_millis() as f32;
-                    let pd = CPartialDecryption {
-                        pd_ballots: dfs
+                    let pd = PartialDecryption {
+                        pd_ballots: dfs,
+                        phantom_a: PhantomData,
                     };
 
                     let pd_h = hashing::hash(&pd);
@@ -239,16 +233,15 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Tru
         ret as u32
     }
     
-    // ballots may come the ballot box, or an earlier mix
-    fn get_mix_src<B: BulletinBoard<C, W, T, P>>(&self, board: &B, contest: u32, mixing_trustee: u32, ballots_h: Hash, pk: &PublicKey<C>) -> Vec<Ciphertext<C, W>> {
+    fn get_mix_src<B: BulletinBoard<A>>(&self, board: &B, contest: u32, mixing_trustee: u32, ballots_h: hashing::Hash, pk: &PublicKey<A::Context>) -> Vec<Ciphertext<A::Context, {A::W}>> where [(); A::W]: {
 
         if mixing_trustee == 0 {
             let ballots = board.get_ballots(contest, ballots_h).unwrap();
             
-            let ciphertexts: Vec<Ciphertext<C, W>> = ballots.ciphertexts.iter().map(|c| {
+            let ciphertexts: Vec<Ciphertext<A::Context, {A::W}>> = ballots.ciphertexts.iter().map(|c| {
                 let ok = c.proof.verify(&pk.pk_b, &pk.pk_a, &c.u_b, &c.v_b, &c.u_a);
                 assert!(ok);
-                elgamal::Ciphertext::<C, W>::new(c.u_b.clone(),c.v_b.clone())
+                elgamal::Ciphertext::<A::Context, {A::W}>::new(c.u_b.clone(),c.v_b.clone())
             }).collect();
             
             ciphertexts
@@ -259,15 +252,15 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Tru
         }
     }
     
-    fn share(&self) -> CKeyshares<C, T, P> {
+    fn share(&self) -> Keyshares<A> where [(); A::T]:, [(); A::P]: {
         let dealer = Dealer::generate();
         
         let shares = dealer.get_verifiable_shares();
-        CKeyshares { shares }
+        Keyshares { shares, phantom_a: PhantomData }
     }
 
-    fn get_plaintexts<B: BulletinBoard<C, W, T, P>>(&self, board: &B, cnt: u32, hs: Vec<Hash>, 
-        mix_h: Hash, share_hs: Vec<Hash>, cfg: &CConfig<C>, self_index: u32) -> Option<CPlaintexts<C, W>> {
+    fn get_plaintexts<B: BulletinBoard<A>>(&self, board: &B, cnt: u32, hs: Vec<hashing::Hash>,
+        mix_h: hashing::Hash, share_hs: Vec<hashing::Hash>, cfg: &Config<A>, self_index: u32) -> Option<Plaintexts<A>> where [(); A::W]:, [(); A::T]:, [(); A::P]: {
         
         assert!(hs.len() == share_hs.len());
         
@@ -275,20 +268,19 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Tru
         let mix = board.get_mix(cnt, last_trustee as u32, mix_h).unwrap();
         let shares = board.get_shares(cnt, share_hs).unwrap();
         
-        // this is not necessary, verification keys should be part of the pk
-        let recipients: [Recipient<C, T, P>; P] = array::from_fn(move |i| {
+        let recipients: [Recipient<A::Context, {A::T}, {A::P}>; {A::P}] = array::from_fn(move |i| {
             
             let position = (i + 1) as u32;
             let position = ParticipantPosition::new(position);
             
-            let verifiable_shares: [VerifiableShare<C, T>; P] = shares.clone().map(|v| {
+            let verifiable_shares: [VerifiableShare<A::Context, {A::T}>; {A::P}] = shares.clone().map(|v| {
                 v.shares.for_participant(&position)
             });
             
             Recipient::new(position, verifiable_shares)
         });
 
-        let verification_keys: [C::Element; T] =
+        let verification_keys: [<A::Context as Context>::Element; {A::T}] =
             array::from_fn(|i| recipients[i].verification_key.clone());
 
         let dfs = array::from_fn(|i| {
@@ -297,36 +289,25 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Tru
             df.pd_ballots
         });
 
-        let ciphertexts: Vec<DkgCiphertext<C, W, T>> = mix.mixed_ballots.iter()
+        let ciphertexts: Vec<DkgCiphertext<A::Context, {A::W}, {A::T}>> = mix.mixed_ballots.iter()
                         .map(|c| DkgCiphertext(c.clone())).collect();
         let plaintexts = reconstruct(&ciphertexts, &dfs, &verification_keys, &vec![]);
 
         let plaintexts = plaintexts.into_iter().map(|p| Plaintext(p)).collect();
         
-        let ret = CPlaintexts { plaintexts };
+        let ret = Plaintexts { plaintexts, phantom_a: PhantomData };
 
         Some(ret)
     }
 
-    fn get_pk<B: BulletinBoard<C, W, T, P>>(&self, board: &B, hs: Vec<Hash>, cnt: u32, self_index: u32) -> Option<PublicKey<C>> {
+    fn get_pk<B: BulletinBoard<A>>(&self, board: &B, hs: Vec<hashing::Hash>, cnt: u32, self_index: u32) -> Option<PublicKey<A::Context>> where [(); A::T]:, [(); A::P]: {
         
         let shares = board.get_shares(cnt, hs).unwrap();
-        /* let recipients: [Recipient<C, T, P>; P] = array::from_fn(|i| {
-            
-            let position = (i + 1) as u32;
-            let position = ParticipantPosition::new(position);
-            
-            let verifiable_shares: [VerifiableShare<C, T>; P] = shares.clone().map(|v| {
-                v.shares.for_participant(&position)
-            });
-            
-            Recipient::new(position, verifiable_shares)
-        });*/
 
         let position = self_index + 1;
         let position = ParticipantPosition::new(position);
             
-        let verifiable_shares: [VerifiableShare<C, T>; P] = shares.clone().map(|v| {
+        let verifiable_shares: [VerifiableShare<A::Context, {A::T}>; {A::P}] = shares.clone().map(|v| {
             v.shares.for_participant(&position)
         });
             
@@ -334,9 +315,7 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize> Tru
 
         let pk = recipient.joint_pk.0.clone();
         
-
-        // this would be derived from hashing public data
-        let pk_a = C::generator();
+        let pk_a = A::Context::generator();
         let ret = PublicKey { pk_b: pk.y, pk_a };
 
         Some(ret)

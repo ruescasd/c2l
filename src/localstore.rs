@@ -1,15 +1,12 @@
 use std::path::{Path,PathBuf};
 use std::marker::PhantomData;
 
-use serde::Serialize;
-
 use crate::hashing;
 use crate::util;
 use crate::action::Act;
-use crate::artifact::*;
+use crate::artifact::{Keyshares, Mix, PartialDecryption, Plaintexts};
 use crate::statement::*;
-
-use crypto::context::Context;
+use crate::Application;
 use crypto::cryptosystem::naoryung::PublicKey;
 
 pub struct ConfigPath(pub PathBuf);
@@ -25,20 +22,19 @@ pub struct PDecryptionsPath(pub PathBuf, pub PathBuf);
 pub struct PlaintextsPath(pub PathBuf, pub PathBuf);
 pub struct PlaintextsStmtPath(pub PathBuf);
 
-pub struct LocalStore<C: Context, const W: usize, const T: usize, const P: usize> {
+pub struct LocalStore<A: Application> {
     pub fs_path: PathBuf,
-    phantom_c: PhantomData<C>,
+    phantom_a: PhantomData<A>,
 }
 
-// impl<E: Element + DeserializeOwned,     G: Group<E> + DeserializeOwned>  LocalStore<E, G> {
-impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize>  LocalStore<C, W, T, P> {
+impl<A: Application> LocalStore<A> {
     
-    pub fn new(fs_path: String) -> LocalStore<C, W, T, P> {
+    pub fn new(fs_path: String) -> LocalStore<A> {
         let target = Path::new(&fs_path);
         assert!(target.exists() && target.is_dir());
         LocalStore {
             fs_path: target.to_path_buf(),
-            phantom_c: PhantomData,
+            phantom_a: PhantomData,
         }
     }
     pub fn set_config_stmt(&self, act: &Act, stmt: &SignedStatement) -> ConfigStmtPath {
@@ -49,7 +45,7 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize>  Lo
             self.set_work(act, vec![stmt_b]).remove(0)
         )
     }
-    pub fn set_share(&self, act: &Act, share: CKeyshares<C, T, P>, stmt: &SignedStatement) -> KeysharePath {
+    pub fn set_share(&self, act: &Act, share: Keyshares<A>, stmt: &SignedStatement) -> KeysharePath where [(); A::T]:, [(); A::P]: {
         assert!(matches!(act, Act::PostShare(..)));
         assert!(matches!(stmt.statement.stype, StatementType::Keyshare));
         let share_b = bincode::serialize(&share).unwrap();
@@ -60,7 +56,7 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize>  Lo
         
         KeysharePath (share_p, stmt_p)
     }
-    pub fn set_pk(&self, act: &Act, pk: PublicKey<C>, stmt: &SignedStatement) -> PkPath {
+    pub fn set_pk(&self, act: &Act, pk: PublicKey<A::Context>, stmt: &SignedStatement) -> PkPath {
         assert!(matches!(act, Act::CombineShares(..)));
         assert!(matches!(stmt.statement.stype, StatementType::PublicKey));
         let pk_b = bincode::serialize(&pk).unwrap();
@@ -80,7 +76,7 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize>  Lo
         
         PkStmtPath(stmt_p)
     }
-    pub fn set_mix(&self, act: &Act, mix: CMix<C, W, T>, stmt: &SignedStatement) -> MixPath {
+    pub fn set_mix(&self, act: &Act, mix: Mix<A>, stmt: &SignedStatement) -> MixPath where [(); A::W]: {
         assert!(matches!(act, Act::Mix(..)));
         assert!(matches!(stmt.statement.stype, StatementType::Mix));
         let mix_b = bincode::serialize(&mix).unwrap();
@@ -102,7 +98,7 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize>  Lo
     }
 
 
-    pub fn set_pdecryptions(&self, act: &Act, pdecryptions: CPartialDecryption<C, W>, stmt: &SignedStatement) -> PDecryptionsPath {
+    pub fn set_pdecryptions(&self, act: &Act, pdecryptions: PartialDecryption<A>, stmt: &SignedStatement) -> PDecryptionsPath where [(); A::W]: {
         assert!(matches!(act, Act::PartialDecrypt(..)));
         assert!(matches!(stmt.statement.stype, StatementType::PDecryption));
         let pdecryptions_b = bincode::serialize(&pdecryptions).unwrap();
@@ -114,7 +110,7 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize>  Lo
         PDecryptionsPath(pdecryptions_p, stmt_p)
     }
     
-    pub fn set_plaintexts(&self, act: &Act, plaintexts: CPlaintexts<C, W>, stmt: &SignedStatement) -> PlaintextsPath {
+    pub fn set_plaintexts(&self, act: &Act, plaintexts: Plaintexts<A>, stmt: &SignedStatement) -> PlaintextsPath where [(); A::W]: {
         assert!(matches!(act, Act::CombineDecryptions(..)));
         assert!(matches!(stmt.statement.stype, StatementType::Plaintexts));
         let plaintexts_b = bincode::serialize(&plaintexts).unwrap();
@@ -179,4 +175,3 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize>  Lo
         ret
     }
 }
-

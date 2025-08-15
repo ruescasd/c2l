@@ -10,13 +10,13 @@ use std::marker::PhantomData;
 use crate::hashing::{HashBytes, Hash};
 use crate::hashing;
 use crate::bb::*;
-use crate::artifact::*;
+use crate::artifact::{Config, Keyshares, Ballots, Mix, PartialDecryption, Plaintexts};
 use crate::statement::*;
 use crate::protocol::SVerifier;
 use crate::util;
 use crate::localstore::*;
 
-use crypto::context::Context;
+use crate::Application;
 
 struct MBasicBulletinBoard{
     data: HashMap<String, Vec<u8>>
@@ -31,11 +31,11 @@ impl MBasicBulletinBoard {
     fn list(&self) -> Vec<String> {
         self.data.iter().map(|(a, _)| a.clone()).collect()
     }
-    fn get<A: HashBytes + DeserializeOwned>(&self, target: String, hash: Hash) -> Result<A, String> {
+    fn get<T: HashBytes + DeserializeOwned>(&self, target: String, hash: Hash) -> Result<T, String> {
         let key = target;
         let bytes = self.data.get(&key).ok_or("Not found")?;
 
-        let artifact = bincode::deserialize::<A>(bytes)
+        let artifact = bincode::deserialize::<T>(bytes)
             .map_err(|e| std::format!("serde error {}", e))?;
 
         let hashed = hashing::hash(&artifact);
@@ -62,16 +62,16 @@ impl MBasicBulletinBoard {
     }
 }
 
-pub struct MemoryBulletinBoard<C: Context, const W: usize, const T: usize, const P: usize> {
+pub struct MemoryBulletinBoard<A: Application> {
     basic: MBasicBulletinBoard,
-    phantom_c: PhantomData<C>,
+    phantom_a: PhantomData<A>,
 }
 
-impl<C: Context, const W: usize, const T: usize, const P: usize> MemoryBulletinBoard<C, W, T, P> {
-    pub fn new() -> MemoryBulletinBoard<C, W, T, P> {
+impl<A: Application> MemoryBulletinBoard<A> {
+    pub fn new() -> MemoryBulletinBoard<A> {
         MemoryBulletinBoard {
             basic: MBasicBulletinBoard::new(),
-            phantom_c: PhantomData,
+            phantom_a: PhantomData,
         }
     }
     pub fn clear(&mut self) {
@@ -80,7 +80,7 @@ impl<C: Context, const W: usize, const T: usize, const P: usize> MemoryBulletinB
     fn put(&mut self, name: &str, data: &Path) {
         self.basic.put(name, data);
     }
-    fn get<A: HashBytes + DeserializeOwned>(&self, target: String, hash: Hash) -> Result<A, String> {
+    fn get<T: HashBytes + DeserializeOwned>(&self, target: String, hash: Hash) -> Result<T, String> {
         self.basic.get(target, hash)
     }
     pub fn get_unsafe(&self, target: String) -> Option<&Vec<u8>> {
@@ -88,7 +88,7 @@ impl<C: Context, const W: usize, const T: usize, const P: usize> MemoryBulletinB
     }
 }
 
-impl<C: Context + DeserializeOwned, const W: usize, const T: usize, const P: usize> BulletinBoard<C, W, T, P> for MemoryBulletinBoard<C, W, T, P> {
+impl<A: Application> BulletinBoard<A> for MemoryBulletinBoard<A> where A::Context: DeserializeOwned, [(); A::W]:, [(); A::T]:, [(); A::P]: {
     
     fn list(&self) -> Vec<String> {
         self.basic.list()
@@ -96,14 +96,14 @@ impl<C: Context + DeserializeOwned, const W: usize, const T: usize, const P: usi
     fn add_config(&mut self, path: &ConfigPath) {
         self.put(Self::CONFIG, &path.0);
     }
-    fn get_config_unsafe(&self) -> Option<CConfig<C>> {
+    fn get_config_unsafe(&self) -> Option<Config<A>> {
         let bytes = self.basic.get_unsafe(Self::CONFIG)?;
-        let ret: CConfig<C> = bincode::deserialize(bytes).unwrap();
+        let ret: Config<A> = bincode::deserialize(bytes).unwrap();
 
         Some(ret)
     }
     
-    fn get_config(&self, hash: Hash) -> Option<CConfig<C>> {
+    fn get_config(&self, hash: Hash) -> Option<Config<A>> {
         let ret = self.get(Self::CONFIG.to_string(), hash).ok()?;
 
         Some(ret)
@@ -116,8 +116,8 @@ impl<C: Context + DeserializeOwned, const W: usize, const T: usize, const P: usi
         self.put(&Self::share(contest, trustee), &path.0);
         self.put(&Self::share_stmt(contest, trustee), &path.1);
     }
-    fn get_shares(&self, contest: u32, hashes: Vec<Hash>) -> Option<[CKeyshares<C, T, P>; P]> {
-        let ret: [CKeyshares<C, T, P>; P] = array::from_fn(|i| {
+    fn get_shares(&self, contest: u32, hashes: Vec<Hash>) -> Option<[Keyshares<A>; A::P]> {
+        let ret: [Keyshares<A>; A::P] = array::from_fn(|i| {
             let key = Self::share(contest, i as u32).to_string();
             self.get(key, hashes[i]).unwrap()
         });
@@ -133,7 +133,7 @@ impl<C: Context + DeserializeOwned, const W: usize, const T: usize, const P: usi
     fn set_pk_stmt(&mut self, path: &PkStmtPath, contest: u32, trustee: u32) {
         self.put(&Self::public_key_stmt(contest, trustee), &path.0);
     }
-    fn get_pk(&mut self, contest: u32, hash: Hash) -> Option<PublicKey<C>> {
+    fn get_pk(&self, contest: u32, hash: Hash) -> Option<PublicKey<A::Context>> {
         // 0: trustee 0 combines shares into pk
         let key = Self::public_key(contest, 0).to_string();
         let ret = self.get(key, hash).ok()?;
@@ -145,7 +145,7 @@ impl<C: Context + DeserializeOwned, const W: usize, const T: usize, const P: usi
         self.put(&Self::ballots(contest), &path.0);
         self.put(&Self::ballots_stmt(contest), &path.1);
     }
-    fn get_ballots(&self, contest: u32, hash: Hash) -> Option<CBallots<C, W>> {
+    fn get_ballots(&self, contest: u32, hash: Hash) -> Option<Ballots<A>> {
         let key = Self::ballots(contest).to_string();
         let ret = self.get(key, hash).ok()?;
 
@@ -159,7 +159,7 @@ impl<C: Context + DeserializeOwned, const W: usize, const T: usize, const P: usi
     fn add_mix_stmt(&mut self, path: &MixStmtPath, contest: u32, trustee: u32, other_t: u32) {
         self.put(&Self::mix_stmt_other(contest, trustee, other_t), &path.0);
     }
-    fn get_mix(&self, contest: u32, trustee: u32, hash: Hash) -> Option<CMix<C, W, T>> {
+    fn get_mix(&self, contest: u32, trustee: u32, hash: Hash) -> Option<Mix<A>> {
         let key = Self::mix(contest, trustee).to_string();
         let ret = self.get(key, hash).ok()?;
 
@@ -170,7 +170,7 @@ impl<C: Context + DeserializeOwned, const W: usize, const T: usize, const P: usi
         self.put(&Self::decryption(contest, trustee), &path.0);
         self.put(&Self::decryption_stmt(contest, trustee), &path.1);
     }
-    fn get_decryption(&self, contest: u32, trustee: u32, hash: Hash) -> Option<CPartialDecryption<C, W>> {
+    fn get_decryption(&self, contest: u32, trustee: u32, hash: Hash) -> Option<PartialDecryption<A>> {
         let key = Self::decryption(contest, trustee).to_string();
         let ret = self.get(key, hash).ok()?;
 
@@ -185,7 +185,7 @@ impl<C: Context + DeserializeOwned, const W: usize, const T: usize, const P: usi
     fn set_plaintexts_stmt(&mut self, path: &PlaintextsStmtPath, contest: u32, trustee: u32) {
         self.put(&Self::plaintexts_stmt(contest, trustee), &path.0);
     }
-    fn get_plaintexts(&self, contest: u32, hash: Hash) -> Option<CPlaintexts<C, W>> {
+    fn get_plaintexts(&self, contest: u32, hash: Hash) -> Option<Plaintexts<A>> {
         // 0: trustee 0 combines shares into pk
         let key = Self::plaintexts(contest, 0).to_string();
         let ret = self.get(key, hash).ok()?;
@@ -216,7 +216,7 @@ impl<C: Context + DeserializeOwned, const W: usize, const T: usize, const P: usi
     }
 }
 
-impl<C: Context, const W: usize, const T: usize, const P: usize> Names for MemoryBulletinBoard <C, W, T, P>{}
+impl<A: Application> Names for MemoryBulletinBoard <A>{}
 
 fn artifact_location(path: &str) -> (i32, u32) {
     let p = Path::new(&path);

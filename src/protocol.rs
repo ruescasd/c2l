@@ -8,28 +8,27 @@ use ed25519_dalek::PublicKey as SPublicKey;
 use ed25519_dalek::Verifier;
 use crepe::crepe;
 use log::info;
-use serde::Serialize;
 
 use crate::hashing;
-use crate::hashing::*;
 use crate::statement::*;
 use crate::bb::*;
 use crate::util;
 use crate::action::Act;
 use crate::util::short;
 use crate::trustee::Trustee;
+use crate::Application;
 
 pub type TrusteeTotal = u32;
 pub type TrusteeIndex = u32;
 pub type ContestIndex = u32;
-pub type ConfigHash = Hash;
-pub type ShareHash = Hash;
-pub type PkHash = Hash;
-pub type BallotsHash = Hash;
-pub type MixHash = Hash;
-pub type DecryptionHash = Hash;
-pub type PlaintextsHash = Hash;
-pub type Hashes = [Hash; 10];
+pub type ConfigHash = hashing::Hash;
+pub type ShareHash = hashing::Hash;
+pub type PkHash = hashing::Hash;
+pub type BallotsHash = hashing::Hash;
+pub type MixHash = hashing::Hash;
+pub type DecryptionHash = hashing::Hash;
+pub type PlaintextsHash = hashing::Hash;
+pub type Hashes = [hashing::Hash; 10];
 
 type OutputF = (HashSet<Do>, HashSet<ConfigOk>, HashSet<PkSharesAll>, HashSet<PkOk>, 
     HashSet<PkSharesUpTo>, HashSet<ConfigSignedUpTo>, HashSet<Contest>,
@@ -46,7 +45,7 @@ pub struct SVerifier {
 
 impl SVerifier {
     
-    fn verify<C: Context, const W: usize, const T: usize, const P: usize, B: BulletinBoard<C, W, T, P>>(&self, board: &B) -> Option<InputFact> {
+    fn verify<A: Application, B: BulletinBoard<A>>(&self, board: &B) -> Option<InputFact> {
         let statement = &self.statement.statement;
         let config = board.get_config_unsafe()?;
         
@@ -60,9 +59,6 @@ impl SVerifier {
         let statement_hash = hashing::hash(statement);
         let verified = pk.verify(&statement_hash, &self.statement.signature);
         let config_h = util::to_u8_64(&statement.hashes[0]);
-        // info!("* Verify returns: [{}] on [{:?}] from trustee [{}] for contest [{}]", verified.is_ok(), 
-        //    &self.statement.statement.stype, &self.trustee, &self.contest
-        //);
         
         let mixer_t = statement.trustee_aux.unwrap_or(self_t);
 
@@ -223,7 +219,6 @@ fn load_facts(facts: &Vec<InputFact>, runtime: &mut Crepe) {
         a.to_string().partial_cmp(&b.to_string()).unwrap()
     });
     sorted.into_iter().map(|f| {
-    // facts.into_iter().map(|f| {
         info!("IFact {:?}", f);
         match f {
             InputFact::ConfigPresent(x) => runtime.extend(&[x]),
@@ -406,52 +401,36 @@ crepe! {
     @input
     struct PlaintextsSignedBy(ConfigHash, ContestIndex, PlaintextsHash, TrusteeIndex);
 
-    // 0
     @output
     struct Do(Act);
-    // 1
     @output
     struct ConfigOk(ConfigHash);
-    // 2
     @output
     struct PkSharesAll(ConfigHash, ContestIndex, Hashes);
-    // 3
     @output
     struct PkOk(ConfigHash, ContestIndex, PkHash);
-    // 4
     @output
     struct PkSharesUpTo(ConfigHash, ContestIndex, TrusteeIndex, Hashes);
-    // 5
     @output
     struct ConfigSignedUpTo(ConfigHash, TrusteeIndex);
-    // 6
     @output
     struct Contest(ConfigHash, ContestIndex);
-    // 7
     @output
     struct PkSignedUpTo(ConfigHash, ContestIndex, PkHash, TrusteeIndex);
-    // 8
     @output
     struct MixSignedUpTo(ConfigHash, ContestIndex, MixHash, BallotsHash, TrusteeIndex);
-    // 9
     @output
     struct MixOk(ConfigHash, ContestIndex, MixHash, BallotsHash);
-    // 10
     @output
     struct ContestMixedUpTo(ConfigHash, ContestIndex, MixHash, TrusteeIndex);
-    // 11
     @output
     struct ContestMixedOk(ConfigHash, ContestIndex, MixHash);
-    // 11
     @output
     struct DecryptionsUpTo(ConfigHash, ContestIndex, TrusteeIndex, Hashes);
-    // 12
     @output
     struct DecryptionsAll(ConfigHash, ContestIndex, Hashes);
-    // 13
     @output
     struct PlaintextsSignedUpTo(ConfigHash, ContestIndex, PlaintextsHash, TrusteeIndex);
-    // 14
     @output
     struct PlaintextsOk(ConfigHash, ContestIndex, PlaintextsHash);
     
@@ -478,7 +457,6 @@ crepe! {
         PkSignedBy(config, contest, pk_hash, 0),
         !PkSignedBy(config, contest, pk_hash, self_t);
 
-    // mix 0
     Do(Act::Mix(config, contest, ballots_hash, pk_hash)) <- 
         PkOk(config, contest, pk_hash),
         ConfigPresent(config, _, _, 0),
@@ -486,7 +464,6 @@ crepe! {
         BallotsSigned(config, contest, ballots_hash),
         !MixSignedBy(config, contest, _, _, 0, 0);
 
-    // mix n
     Do(Act::Mix(config, contest, mix_ballots_hash, pk_hash)) <- 
         PkOk(config, contest, pk_hash),
         ConfigPresent(config, _, _, self_t),
@@ -496,24 +473,20 @@ crepe! {
         MixSignedBy(config, contest, mix_ballots_hash, _, self_t - 1, self_t),
         !MixSignedBy(config, contest, _, _, self_t, self_t);
   
-    // check mix 0
     Do(Act::CheckMix(config, contest, 0, mix_hash, ballots_hash, pk_hash)) <- 
         PkOk(config, contest, pk_hash),
         ConfigPresent(config, _, _, self_t),
         ConfigOk(config),    
         MixSignedBy(config, contest, mix_hash, ballots_hash, 0, 0),
-        // input ballots to mix came from the ballotbox
         BallotsSigned(config, contest, ballots_hash),
         !MixSignedBy(config, contest, mix_hash, ballots_hash, 0, self_t);
 
-    // check mix n
     Do(Act::CheckMix(config, contest, mixer_t, mix_hash, mix_ballots_hash, pk_hash)) <- 
         PkOk(config, contest, pk_hash),
         ConfigPresent(config, _, _, self_t),
         ConfigOk(config),    
         MixSignedBy(config, contest, mix_hash, mix_ballots_hash, mixer_t, _signer_t),
         (mixer_t > 0),
-        // input ballots to mix came from a previous mix, thus (mixer_t - 1)
         MixSignedBy(config, contest, mix_ballots_hash, _, mixer_t - 1, _),
         !MixSignedBy(config, contest, mix_hash, mix_ballots_hash, mixer_t, self_t);
     
@@ -637,28 +610,27 @@ crepe! {
         (n > 0);
 }
 
-fn array_make(value: Hash) -> Hashes {
+fn array_make(value: hashing::Hash) -> Hashes {
     let mut ret = [[0u8; 64]; 10];
     ret[0] = value;
 
     ret
 }
 
-fn array_set(mut input: Hashes, index: u32, value: Hash) -> Hashes {
+fn array_set(mut input: Hashes, index: u32, value: hashing::Hash) -> Hashes {
     input[index as usize] = value;
 
     input
 }
 
-use crypto::context::Context;
-pub struct Protocol <C: Context, const W: usize, const T: usize, const P: usize,B> {
-    trustee: Trustee<C, W, T, P>,
+pub struct Protocol<A: Application, B> {
+    trustee: Trustee<A>,
     phantom_b: PhantomData<B>
 }
 
-impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize, B: BulletinBoard<C, W, T, P>> Protocol<C, W, T, P, B> {
+impl<A: Application, B: BulletinBoard<A>> Protocol<A, B> where [(); A::W]:, [(); A::T]:, [(); A::P]: {
 
-    pub fn new(trustee: Trustee<C, W, T, P>) -> Protocol<C, W, T, P, B> {
+    pub fn new(trustee: Trustee<A>) -> Protocol<A, B> {
         Protocol {
             trustee,
             phantom_b: PhantomData
@@ -670,7 +642,6 @@ impl<C: Context + Serialize, const W: usize, const T: usize, const P: usize, B: 
         let self_pk = self.trustee.keypair.public;
         let now = std::time::Instant::now();
         let svs = board.get_statements();
-        // info!("SVerifiers: {}", svs.len());
         let mut facts: Vec<InputFact> = svs.iter()
             .map(|sv| sv.verify(board))
             .filter(|f| f.is_some())
