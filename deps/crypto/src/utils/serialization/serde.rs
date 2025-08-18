@@ -1,4 +1,4 @@
-use crate::context::{Context, RistrettoCtx};
+use crate::context::{Context, RistrettoCtx, P256Ctx};
 use crate::cryptosystem::{elgamal, naoryung};
 use crate::dkgd::{DkgCiphertext, DkgPublicKey};
 use crate::dkgd::{VerifiableShares, VerifiableShare, DecryptionFactor};
@@ -360,6 +360,25 @@ impl<'de> serde::Deserialize<'de> for RistrettoCtx {
 }
 
 impl serde::Serialize for RistrettoCtx {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_bytes(&vec![])
+    }
+}
+
+// P256Ctx
+impl<'de> serde::Deserialize<'de> for P256Ctx {
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(P256Ctx)
+    }
+}
+
+impl serde::Serialize for P256Ctx {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,

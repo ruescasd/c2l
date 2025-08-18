@@ -50,7 +50,7 @@ pub trait Context: private::Sealed + std::fmt::Debug + PartialEq + 'static + Clo
     fn get_name() -> String;
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq)]
 pub struct P256Ctx;
 impl Context for P256Ctx {
     type Element = <Self::G as CryptoGroup>::Element;

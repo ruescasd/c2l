@@ -45,6 +45,143 @@ fn main() {
     demo();
 }
 
+fn demo() {
+    const W: usize = 3;
+    const T: usize = 2;
+    const P: usize = 3;
+    let contests = 3;
+    let ballots = 100;
+    
+    let mut siv = cursive::default();
+    let demo: Demo<crypto::context::P256Ctx, W, T, P> = Demo::new(siv.cb_sink().clone(), contests, ballots);
+    let params = util::type_name_of(&demo);
+    CombinedLogger::init(
+        vec![
+            // TermLogger::new(LevelFilter::Info, simplelog::Config::default(), TerminalMode::Mixed),
+            WriteLogger::new(LevelFilter::Warn, simplelog::Config::default(), File::create("./demo_tui.log").unwrap()),
+            WriteLogger::new(LevelFilter::Info, simplelog::Config::default(), demo.writer()),
+        ]
+    ).unwrap();
+    
+    let demo_arc_run = Arc::new(Mutex::new(
+        demo
+    ));
+    let demo_arc_ballots = Arc::clone(&demo_arc_run);
+    let demo_arc_verify = Arc::clone(&demo_arc_run);
+    let demo_arc_artifacts = Arc::clone(&demo_arc_run);
+    
+    
+    let theme = custom_theme_from_cursive(&siv);
+    siv.set_theme(theme);
+    
+    let build = if cfg!(debug_assertions) {
+        "slow as BOLLS"
+    } else {
+        "release"
+    };
+
+    let mut n: u32 = 0;
+
+    let init_text = format!("Build: {}\nParams: {}\nTrustees: {}\nContests: {}\nBallots: {}", 
+        build, params, P, contests, ballots);
+    
+    let mut h_layout = LinearLayout::horizontal();
+    let mut layout = LinearLayout::vertical();
+    for i in 0..P {
+        let title = format!("Trustee {}", i);
+        let text = "";    
+        layout = layout.child(Panel::new(
+            TextView::new(text)
+                .scrollable()
+                .scroll_strategy(ScrollStrategy::StickToBottom)
+                .with_name(&i.to_string())
+            )
+            .title(title)
+            .title_position(HAlign::Left)
+            .full_width()
+            .full_height()
+        );
+    }
+    
+    layout = layout.child(
+        LinearLayout::horizontal()
+            .child(Panel::new(
+                TextView::new("[s Step] [b Add ballots] [c Check plaintexts] [i info] [q Quit]")
+            )
+            .title("Commands")
+            .title_position(HAlign::Left)
+            .fixed_height(3)
+            .full_width())
+            .child(Panel::new(
+                TextView::new(StyledString::styled("Ready", Color::Light(BaseColor::Green)))
+                .h_align(HAlign::Left)
+                .with_name("status")
+            )
+            .fixed_width(12))
+    );
+    h_layout.add_child(layout);
+    h_layout.add_child(Panel::new(
+        TextView::new(init_text.clone())
+            .scrollable()
+            .scroll_strategy(ScrollStrategy::StickToBottom)
+            .with_name("facts"))
+        .title("Facts")
+        .title_position(HAlign::Left)
+        .fixed_width(90)
+        .full_height()
+    );
+    // siv.add_fullscreen_layer(h_layout);
+    siv.add_layer(h_layout);
+    siv.add_global_callback('q', |s| s.quit());
+    siv.add_global_callback('s', move |s| {
+        let guard = Arc::clone(&demo_arc_run);
+        if guard.try_lock().is_ok() {
+            s.call_on_name(&n.to_string(), |view: &mut ScrollView<TextView>| {
+                view.get_inner_mut().set_content("");
+            });
+            s.call_on_name(&"facts".to_string(), |view: &mut ScrollView<TextView>| {
+                view.get_inner_mut().set_content("");
+            });
+            step_t(Arc::clone(&demo_arc_run), n);
+            n = (n + 1) % (P as u32);
+        }
+    });
+    siv.add_global_callback('b', move |s| {
+        let guard = Arc::clone(&demo_arc_ballots);
+        if guard.try_lock().is_ok() {
+            s.call_on_name(&n.to_string(), |view: &mut ScrollView<TextView>| {
+                view.get_inner_mut().set_content("");
+            });
+            ballots_t(Arc::clone(&demo_arc_ballots), 0);
+        }
+    });
+    siv.add_global_callback('c', move |s| {
+        let guard = Arc::clone(&demo_arc_verify);
+        if guard.try_lock().is_ok() {
+            s.call_on_name(&n.to_string(), |view: &mut ScrollView<TextView>| {
+                view.get_inner_mut().set_content("");
+            });
+            check_t(Arc::clone(&demo_arc_verify), 0);
+        }
+    });
+    siv.add_global_callback('i', move |s| {
+        let text = init_text.clone();
+        let guard = Arc::clone(&demo_arc_artifacts);
+        let demo = guard.lock().unwrap();
+        let mut artifacts = demo.board.list();
+        artifacts.sort();
+        let artifacts = artifacts.join("\n");
+        
+        s.call_on_name("facts", |view: &mut ScrollView<TextView>| {
+            view.get_inner_mut().set_content(text);
+            view.get_inner_mut().append("\n\nArtifacts:\n\n");
+            view.get_inner_mut().append(artifacts);
+        });
+    });
+    
+    siv.run();
+}
+
 type DemoArc<C, const W: usize, const T: usize, const P: usize> = Arc<Mutex<Demo<C, W, T, P>>>;
 
 struct Demo<C: Context, const W: usize, const T: usize, const P: usize> {
@@ -57,16 +194,7 @@ struct Demo<C: Context, const W: usize, const T: usize, const P: usize> {
     ballots: u32
 }
 impl<C: Context + Serialize + DeserializeOwned + Eq, const W: usize, const T: usize, const P: usize> Demo<C, W, T, P> {
-    fn new(sink: cursive::CbSink, contests: u32, ballots: u32) -> Demo<C, W, T, P> {
-        let local1 = "/tmp/local";
-        let local2 = "/tmp/local2";
-        let local_path = Path::new(&local1);
-        fs::remove_dir_all(local_path).ok();
-        fs::create_dir(local_path).ok();
-        let local_path = Path::new(&local2);
-        fs::remove_dir_all(local_path).ok();
-        fs::create_dir(local_path).ok();
-        
+    fn new(sink: cursive::CbSink, contests: u32, ballots: u32) -> Demo<C, W, T, P> {    
         let mut trustee_pks = Vec::new();
         let mut prots = Vec::new();
         
@@ -205,139 +333,6 @@ impl<C: Context + Serialize + DeserializeOwned + Eq, const W: usize, const T: us
         })).unwrap();
         self.status(String::from("Ready"));
     }
-}
-
-
-fn demo() {
-    let mut n: u32 = 0;
-    let mut siv = cursive::default();
-    const P: usize = 3;
-    let contests = 3;
-    let ballots = 1000;
-    let demo: Demo<RistrettoCtx, 3, 2, P> = Demo::new(siv.cb_sink().clone(), contests, ballots);
-    let params = util::type_name_of(&demo);
-    CombinedLogger::init(
-        vec![
-            // TermLogger::new(LevelFilter::Info, simplelog::Config::default(), TerminalMode::Mixed),
-            WriteLogger::new(LevelFilter::Warn, simplelog::Config::default(), File::create("./demo_tui.log").unwrap()),
-            WriteLogger::new(LevelFilter::Info, simplelog::Config::default(), demo.writer()),
-        ]
-    ).unwrap();
-    
-    let demo_arc_run = Arc::new(Mutex::new(
-        demo
-    ));
-    let demo_arc_ballots = Arc::clone(&demo_arc_run);
-    let demo_arc_verify = Arc::clone(&demo_arc_run);
-    let demo_arc_artifacts = Arc::clone(&demo_arc_run);
-    
-    let theme = custom_theme_from_cursive(&siv);
-    siv.set_theme(theme);
-    
-    let build = if cfg!(debug_assertions) {
-        "slow as BOLLS"
-    } else {
-        "release"
-    };
-
-    let init_text = format!("Build: {}\nParams: {}\nTrustees: {}\nContests: {}\nBallots: {}", 
-        build, params, P, contests, ballots);
-    
-    let mut h_layout = LinearLayout::horizontal();
-    let mut layout = LinearLayout::vertical();
-    for i in 0..P {
-        let title = format!("Trustee {}", i);
-        let text = "";    
-        layout = layout.child(Panel::new(
-            TextView::new(text)
-                .scrollable()
-                .scroll_strategy(ScrollStrategy::StickToBottom)
-                .with_name(&i.to_string())
-            )
-            .title(title)
-            .title_position(HAlign::Left)
-            .full_width()
-            .full_height()
-        );
-    }
-    
-    layout = layout.child(
-        LinearLayout::horizontal()
-            .child(Panel::new(
-                TextView::new("[s Step] [b Add ballots] [c Check plaintexts] [i info] [q Quit]")
-            )
-            .title("Commands")
-            .title_position(HAlign::Left)
-            .fixed_height(3)
-            .full_width())
-            .child(Panel::new(
-                TextView::new(StyledString::styled("Ready", Color::Light(BaseColor::Green)))
-                .h_align(HAlign::Left)
-                .with_name("status")
-            )
-            .fixed_width(12))
-    );
-    h_layout.add_child(layout);
-    h_layout.add_child(Panel::new(
-        TextView::new(init_text.clone())
-            .scrollable()
-            .scroll_strategy(ScrollStrategy::StickToBottom)
-            .with_name("facts"))
-        .title("Facts")
-        .title_position(HAlign::Left)
-        .fixed_width(90)
-        .full_height()
-    );
-    // siv.add_fullscreen_layer(h_layout);
-    siv.add_layer(h_layout);
-    siv.add_global_callback('q', |s| s.quit());
-    siv.add_global_callback('s', move |s| {
-        let guard = Arc::clone(&demo_arc_run);
-        if guard.try_lock().is_ok() {
-            s.call_on_name(&n.to_string(), |view: &mut ScrollView<TextView>| {
-                view.get_inner_mut().set_content("");
-            });
-            s.call_on_name(&"facts".to_string(), |view: &mut ScrollView<TextView>| {
-                view.get_inner_mut().set_content("");
-            });
-            step_t(Arc::clone(&demo_arc_run), n);
-            n = (n + 1) % (P as u32);
-        }
-    });
-    siv.add_global_callback('b', move |s| {
-        let guard = Arc::clone(&demo_arc_ballots);
-        if guard.try_lock().is_ok() {
-            s.call_on_name(&n.to_string(), |view: &mut ScrollView<TextView>| {
-                view.get_inner_mut().set_content("");
-            });
-            ballots_t(Arc::clone(&demo_arc_ballots), 0);
-        }
-    });
-    siv.add_global_callback('c', move |s| {
-        let guard = Arc::clone(&demo_arc_verify);
-        if guard.try_lock().is_ok() {
-            s.call_on_name(&n.to_string(), |view: &mut ScrollView<TextView>| {
-                view.get_inner_mut().set_content("");
-            });
-            check_t(Arc::clone(&demo_arc_verify), 0);
-        }
-    });
-    siv.add_global_callback('i', move |s| {
-        let text = init_text.clone();
-        let guard = Arc::clone(&demo_arc_artifacts);
-        let demo = guard.lock().unwrap();
-        let mut artifacts = demo.board.list();
-        artifacts.sort();
-        let artifacts = artifacts.join("\n");
-        
-        s.call_on_name("facts", |view: &mut ScrollView<TextView>| {
-            view.get_inner_mut().set_content(text);
-            view.get_inner_mut().append("\n\nArtifacts:\n\n");
-            view.get_inner_mut().append(artifacts);
-        });
-    });
-    
-    siv.run();
 }
 
 fn step_t<C: Context + Serialize + DeserializeOwned + Eq + Send + Sync, const W: usize, const T: usize, const P: usize>(demo_arc: DemoArc<C, W, T, P>, t: u32) {
